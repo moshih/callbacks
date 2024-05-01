@@ -1,0 +1,20 @@
+workspace = { members = ["zk-object"] }
+
+[package]
+name = "zk-callbacks"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ark-crypto-primitives = { version = "0.4.0", default-features = true, features = ["crh", "r1cs", "merkle_tree"] }
+ark-ec = "0.4.2"
+ark-bls12-381 = "0.4.0"
+zk-object = { path = "zk-object" }
+ark-snark = "0.4.0"
+ark-ff = "0.4.2"
+ark-r1cs-std = "0.4.0"
+ark-relations = "0.4.0"
+ark-groth16 = "0.4.0"
+rand = "0.8.5"

@@ -1,0 +1,177 @@
+use ark_ff::PrimeField;
+use ark_ff::ToConstraintField;
+use ark_r1cs_std::alloc::AllocVar;
+use ark_r1cs_std::alloc::AllocationMode;
+use ark_r1cs_std::boolean::Boolean;
+use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::R1CSVar;
+use ark_r1cs_std::ToConstraintFieldGadget;
+use ark_relations::ns;
+use ark_relations::r1cs::Namespace;
+use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use std::borrow::Borrow;
+
+pub type Nul<F> = F;
+pub type NulVar<F> = FpVar<F>;
+pub type ComRand<F> = F;
+pub type ComRandVar<F> = FpVar<F>;
+pub type CBHash<F> = F;
+pub type CBHashVar<F> = FpVar<F>;
+pub type Time<F> = F;
+pub type TimeVar<F> = FpVar<F>;
+pub type Com<F> = F;
+pub type ComVar<F> = FpVar<F>;
+pub type Ser<F> = F;
+pub type SerVar<F> = FpVar<F>;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ZKFields<F: PrimeField> {
+    pub nul: Nul<F>,
+    pub com_rand: ComRand<F>,
+    pub callback_hash: CBHash<F>,
+    pub new_in_progress_callback_hash: CBHash<F>,
+    pub old_in_progress_callback_hash: CBHash<F>,
+    pub last_interaction: Time<F>,
+    pub current_callback_ingest: Time<F>,
+    pub last_callback_ingest: Time<F>,
+    pub is_ingest_over: bool,
+}
+
+#[derive(Clone)]
+pub struct ZKFieldsVar<F: PrimeField> {
+    pub nul: NulVar<F>,
+    pub com_rand: ComRandVar<F>,
+    pub callback_hash: CBHashVar<F>,
+    pub new_in_progress_callback_hash: CBHashVar<F>,
+    pub old_in_progress_callback_hash: CBHashVar<F>,
+    pub last_interaction: TimeVar<F>,
+    pub current_callback_ingest: TimeVar<F>,
+    pub last_callback_ingest: TimeVar<F>,
+    pub is_ingest_over: Boolean<F>,
+}
+
+impl<F: PrimeField> ZKFields<F> {
+    pub(crate) fn serialize(&self) -> Vec<Ser<F>> {
+        vec![
+            self.nul.to_field_elements().unwrap(),
+            self.com_rand.to_field_elements().unwrap(),
+            self.callback_hash.to_field_elements().unwrap(),
+            self.new_in_progress_callback_hash
+                .to_field_elements()
+                .unwrap(),
+            self.old_in_progress_callback_hash
+                .to_field_elements()
+                .unwrap(),
+            self.last_interaction.to_field_elements().unwrap(),
+            self.current_callback_ingest.to_field_elements().unwrap(),
+            self.last_callback_ingest.to_field_elements().unwrap(),
+            self.is_ingest_over.to_field_elements().unwrap(),
+        ]
+        .concat()
+    }
+}
+
+impl<F: PrimeField> ZKFieldsVar<F> {
+    pub(crate) fn serialize(&self) -> Result<Vec<SerVar<F>>, SynthesisError> {
+        Ok(vec![
+            self.nul.to_constraint_field()?,
+            self.com_rand.to_constraint_field()?,
+            self.callback_hash.to_constraint_field()?,
+            self.new_in_progress_callback_hash.to_constraint_field()?,
+            self.old_in_progress_callback_hash.to_constraint_field()?,
+            self.last_interaction.to_constraint_field()?,
+            self.current_callback_ingest.to_constraint_field()?,
+            self.last_callback_ingest.to_constraint_field()?,
+            self.is_ingest_over.to_constraint_field()?,
+        ]
+        .concat())
+    }
+}
+
+impl<F: PrimeField> R1CSVar<F> for ZKFieldsVar<F> {
+    type Value = ZKFields<F>;
+
+    fn cs(&self) -> ConstraintSystemRef<F> {
+        self.nul
+            .cs()
+            .or(self.com_rand.cs())
+            .or(self.callback_hash.cs())
+            .or(self.new_in_progress_callback_hash.cs())
+            .or(self.old_in_progress_callback_hash.cs())
+            .or(self.last_interaction.cs())
+            .or(self.current_callback_ingest.cs())
+            .or(self.is_ingest_over.cs())
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        Ok(ZKFields {
+            nul: self.nul.value()?,
+            com_rand: self.com_rand.value()?,
+            callback_hash: self.callback_hash.value()?,
+            new_in_progress_callback_hash: self.new_in_progress_callback_hash.value()?,
+            old_in_progress_callback_hash: self.old_in_progress_callback_hash.value()?,
+            last_interaction: self.last_interaction.value()?,
+            current_callback_ingest: self.current_callback_ingest.value()?,
+            last_callback_ingest: self.last_callback_ingest.value()?,
+            is_ingest_over: self.is_ingest_over.value()?,
+        })
+    }
+}
+
+impl<F: PrimeField> AllocVar<ZKFields<F>, F> for ZKFieldsVar<F> {
+    fn new_variable<T: Borrow<ZKFields<F>>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let ns = cs.into();
+        let cs = ns.cs();
+        let res = f();
+        res.and_then(|rec| {
+            let rec = rec.borrow();
+            let nul = NulVar::new_variable(ns!(cs, "nul"), || Ok(rec.nul), mode)?;
+            let com_rand =
+                ComRandVar::new_variable(ns!(cs, "com_rand"), || Ok(rec.com_rand), mode)?;
+            let callback_hash =
+                CBHashVar::new_variable(ns!(cs, "callback_hash"), || Ok(rec.callback_hash), mode)?;
+            let new_in_progress_callback_hash = CBHashVar::new_variable(
+                ns!(cs, "new_in_progress_callback_hash"),
+                || Ok(rec.new_in_progress_callback_hash),
+                mode,
+            )?;
+            let old_in_progress_callback_hash = CBHashVar::new_variable(
+                ns!(cs, "old_in_progress_callback_hash"),
+                || Ok(rec.old_in_progress_callback_hash),
+                mode,
+            )?;
+            let last_interaction = TimeVar::new_variable(
+                ns!(cs, "last_interaction"),
+                || Ok(rec.last_interaction),
+                mode,
+            )?;
+            let current_callback_ingest = TimeVar::new_variable(
+                ns!(cs, "current_callback_ingest"),
+                || Ok(rec.current_callback_ingest),
+                mode,
+            )?;
+            let last_callback_ingest = TimeVar::new_variable(
+                ns!(cs, "last_callback_ingest"),
+                || Ok(rec.last_callback_ingest),
+                mode,
+            )?;
+            let is_ingest_over =
+                Boolean::new_variable(ns!(cs, "is_ingest_over"), || Ok(rec.is_ingest_over), mode)?;
+            Ok(ZKFieldsVar {
+                nul,
+                com_rand,
+                callback_hash,
+                new_in_progress_callback_hash,
+                old_in_progress_callback_hash,
+                last_interaction,
+                current_callback_ingest,
+                last_callback_ingest,
+                is_ingest_over,
+            })
+        })
+    }
+}
