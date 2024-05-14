@@ -1,26 +1,9 @@
 #![feature(associated_type_defaults)]
+/// Cryptographic definitions and constructions for concrete instantiations.
+pub mod crypto;
+/// Generic definitions useful for construction zero knowledge callback based applications.
 pub mod generic;
+/// Concrete instantiations and implementations of zk-callbacks traits and objects for basic types.
 pub mod impls;
-mod util;
-
-pub trait ObjectBulletin<Com> {
-    fn verify_creation();
-
-    fn verify_settle();
-
-    fn object_is_member();
-}
-
-pub trait CallbackBulletin {
-    fn verify_call();
-
-    fn callback_is_member();
-
-    fn callback_is_not_member();
-}
-
-pub trait ServiceProvider<SK, VK> {
-    fn verify_callback_creation();
-
-    fn call_cb();
-}
+/// Utility types and methods for R1CS and zero knowledge proofs.
+pub mod util;
