@@ -1,7 +1,3 @@
-use ark_ff::PrimeField;
-use ark_ff::ToConstraintField;
-use ark_r1cs_std::prelude::AllocVar;
-use ark_r1cs_std::ToConstraintFieldGadget;
 use rand::CryptoRng;
 use rand::RngCore;
 
@@ -20,18 +16,4 @@ pub trait RRVerifier<S, M, R> {
     fn verify(&self, message: M, signature: S) -> bool;
 
     fn rerand(&self, rng: &mut (impl CryptoRng + RngCore)) -> (R, Self);
-}
-
-pub trait RRTicket<F: PrimeField, A: Clone>: Clone + Eq + std::fmt::Debug {
-    type Sig;
-    type Rand: std::fmt::Debug;
-
-    type Tik: RRVerifier<Self::Sig, A, Self::Rand>
-        + ToConstraintField<F>
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + Default;
-
-    type TikVar: ToConstraintFieldGadget<F> + AllocVar<Self::Tik, F> + Clone;
 }

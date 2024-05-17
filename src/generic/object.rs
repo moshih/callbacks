@@ -35,18 +35,10 @@ pub type ComVar<F> = FpVar<F>;
 pub type Ser<F> = F;
 /// The serialization type in zero knowledge.
 pub type SerVar<F> = FpVar<F>;
-/// An encryption key.
-pub type EncKey<F> = F;
-/// An encryption key in zero knowledge.
-pub type EncKeyVar<F> = FpVar<F>;
 /// A unique identification.
 pub type Id<F> = F;
 /// A unique ID in zero knowledge.
 pub type IdVar<F> = FpVar<F>;
-/// A ticket provided for a callback.
-pub type Ticket<PK> = PK;
-/// A ticket representation in zero knowledge.
-pub type TicketVar<PKV> = PKV;
 
 /// The ZKFields type provides all the necessary types for a user to properly interact with a
 /// server. It is always contained within the `User` type.
@@ -84,7 +76,7 @@ pub struct ZKFieldsVar<F: PrimeField> {
 }
 
 impl<F: PrimeField> ZKFields<F> {
-    pub(crate) fn serialize(&self) -> Vec<Ser<F>> {
+    pub fn serialize(&self) -> Vec<Ser<F>> {
         [
             self.nul.to_field_elements().unwrap(),
             self.com_rand.to_field_elements().unwrap(),

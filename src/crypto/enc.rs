@@ -4,7 +4,8 @@ use ark_ff::ToConstraintField;
 use ark_r1cs_std::prelude::AllocVar;
 use ark_r1cs_std::ToConstraintFieldGadget;
 use ark_relations::r1cs::SynthesisError;
-use core::borrow::Borrow;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use rand::{CryptoRng, RngCore};
 
 pub trait CPACipher<F: PrimeField> {
     type KeyVar: AllocVar<Self, F> + Clone + ToConstraintFieldGadget<F>;
@@ -17,6 +18,8 @@ pub trait CPACipher<F: PrimeField> {
 
     type CV: AllocVar<Self::C, F>;
 
+    fn keygen(rng: &mut (impl CryptoRng + RngCore)) -> Self;
+
     fn encrypt(&self, message: Self::M) -> Self::C;
 
     fn decrypt(&self, ciphertext: Self::C) -> Self::M;
@@ -26,25 +29,36 @@ pub trait CPACipher<F: PrimeField> {
     fn decrypt_in_zk(key: Self::KeyVar, ciphertext: Self::CV) -> Result<Self::MV, SynthesisError>;
 }
 
-pub trait AECipherSigZK<F: PrimeField, A: Clone> {
+pub trait AECipherSigZK<F: PrimeField, Args: Clone>: Clone + std::fmt::Debug {
     type Ct: Clone;
-    type EncKey: CPACipher<F, C = Self::Ct, M = A> + ToConstraintField<F> + Borrow<F>;
+    type EncKey: CPACipher<F, C = Self::Ct, M = Args, KeyVar = Self::EncKeyVar>
+        + ToConstraintField<F>
+        + CanonicalSerialize
+        + CanonicalDeserialize
+        + Clone
+        + Eq
+        + std::fmt::Debug
+        + Default;
+    type EncKeyVar: AllocVar<Self::EncKey, F> + ToConstraintFieldGadget<F> + Clone;
 
     type Sig;
-    type Rand;
+    type Rand: std::fmt::Debug + Clone;
 
     type SigPK: RRVerifier<Self::Sig, Self::Ct, Self::Rand>
         + ToConstraintField<F>
+        + CanonicalSerialize
+        + CanonicalDeserialize
         + Clone
         + Eq
-        + std::fmt::Debug;
+        + std::fmt::Debug
+        + Default;
 
-    type SigPKV: ToConstraintFieldGadget<F> + AllocVar<Self::SigPK, F> + Clone;
+    type SigPKV: AllocVar<Self::SigPK, F> + ToConstraintFieldGadget<F> + Clone;
 
     type SigSK: RRSigner<Self::Sig, Self::Ct, Self::Rand, Self::SigPK>;
 
     fn encrypt_and_sign(
-        message: A,
+        message: Args,
         enc_key: Self::EncKey,
         sig_sk: Self::SigSK,
     ) -> (Self::Ct, Self::Sig) {

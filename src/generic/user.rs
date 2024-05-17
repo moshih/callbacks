@@ -1,6 +1,6 @@
+use crate::crypto::enc::AECipherSigZK;
 use crate::crypto::hash::HasherZK;
 use crate::crypto::hash::Poseidon;
-use crate::crypto::rr::RRTicket;
 use crate::generic::bulletin::PublicUserBul;
 use crate::generic::callbacks::add_ticket_to_hc;
 use crate::generic::callbacks::create_cbs_from_interaction;
@@ -16,150 +16,33 @@ use ark_r1cs_std::alloc::AllocationMode;
 use ark_relations::ns;
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use ark_serialize::CanonicalSerialize;
 use ark_snark::SNARK;
-use core::marker::PhantomData;
 use rand::distributions::Standard;
 use rand::prelude::Distribution;
 use rand::Rng;
 use rand::{CryptoRng, RngCore};
 use std::borrow::Borrow;
 
-/// A struct implementing the UserData trait represents the data stored within a user object in an
-/// arbitrary zk-callbacks system. For example, one may have some reputation associated with a
-/// user, which can be represented as below.
-/// ```
-/// use ark_bls12_381::{Fr as F};
-/// use zk_callbacks::generic::user::UserData;
-/// use ark_r1cs_std::fields::fp::FpVar;
-/// use ark_r1cs_std::ToConstraintFieldGadget;
-/// # use ark_r1cs_std::prelude::AllocVar;
-/// # use core::borrow::Borrow;
-/// # use ark_relations::r1cs::Namespace;
-/// # use ark_relations::r1cs::SynthesisError;
-/// # use ark_r1cs_std::prelude::AllocationMode;
-/// # use ark_relations::ns;
-///
-///
-/// #[derive(Clone, PartialEq, Eq, Debug)]
-/// struct UserObject {
-///     pub reputation: F
-/// }
-///
-/// #[derive(Clone)]
-/// struct UserObjectVar {
-///     pub reputation: FpVar<F>
-/// }
-///
-/// # impl AllocVar<UserObject, F> for UserObjectVar {
-/// #     fn new_variable<T: Borrow<UserObject>>(
-/// #        cs: impl Into<Namespace<F>>,
-/// #        f: impl FnOnce() -> Result<T, SynthesisError>,
-/// #        mode: AllocationMode,
-/// #     ) -> Result<Self, SynthesisError> {
-/// #        let ns = cs.into();
-/// #        let cs = ns.cs();
-/// #        let res = f();
-/// #        res.and_then(|rec| {
-/// #            let rec = rec.borrow();
-/// #            let rep = FpVar::new_variable(ns!(cs, "rep"), || Ok(rec.reputation), mode)?;
-/// #            Ok( UserObjectVar {
-/// #                 reputation: rep
-/// #            })
-/// #        })
-/// #     }
-/// #    }
-///
-/// // (Assuming UserObjectVar already implements AllocVar)
-/// impl UserData for UserObject {
-///
-///     type F = F;
-///
-///     type UserDataVar = UserObjectVar;
-///
-///     fn serialize_elements(&self) -> Vec<F> {
-///         let mut buf: Vec<F> = Vec::new();
-///         buf.extend_from_slice(&self.reputation.serialize_elements());
-///         buf
-///     }
-///
-///     fn serialize_in_zk(user_var: UserObjectVar) -> Result<Vec<FpVar<F>>, SynthesisError> {
-///         let mut buf: Vec<FpVar<F>> = Vec::new();
-///         buf.extend_from_slice(&user_var.reputation.to_constraint_field()?);
-///         Ok(buf)
-///     }
-///
-/// }
-/// ```
 pub trait UserData<F: PrimeField + Absorb>: Clone + Eq + std::fmt::Debug {
-    /// The zero knowledge representation of the user data.
     type UserDataVar: AllocVar<Self, F> + Clone;
 
-    /// A method to serialize the user data into field elements. Used in user commitments.
     fn serialize_elements(&self) -> Vec<Ser<F>>;
 
-    /// Serialize the user data in the zero knowledge representation. Used to prove statements
-    /// about user data with a commitment to the data.
     fn serialize_in_zk(user_var: Self::UserDataVar) -> Result<Vec<SerVar<F>>, SynthesisError>;
 }
 
-/// This struct represents an actual user used within a zk-callbacks system. It contains extra
-/// fields which include the last interacted time, the serial number, nonce, last ingestion time,
-/// and more, along with the custom application based data specified by the generic `U`.
-/// ```
-/// use zk_callbacks::generic::user::User;
-///
-/// fn method_transform<'a>(old_user: &'a User<u8>, args: ()) -> User<u8> {
-///     let mut out = old_user.clone();
-///     out.data = out.data + 1;
-///     out
-/// }
-/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct User<F: PrimeField + Absorb, U: UserData<F>> {
-    /// The application defined data associated with the user.
     pub data: U,
-    /// Fields necessary for any zero knowledge application, including the serial number and nonce.
-    /// See `ZkFields` for more information.
     pub zk_fields: ZKFields<F>,
+
+    pub callbacks: Vec<Vec<u8>>,
 }
 
-/// `UserVar` is the zero knowledge representation of the user. This object is passed into
-/// predicates so users can prove statements about their data. Example usage can be seen below with
-/// the following predicate.
-/// ```
-/// # use ark_r1cs_std::alloc::AllocVar;
-/// # use ark_r1cs_std::eq::EqGadget;
-/// # use ark_bls12_381::{Fr as F};
-/// # use core::cmp::Ordering;
-/// # use ark_r1cs_std::boolean::Boolean;
-/// # use ark_relations::ns;
-/// # use ark_r1cs_std::fields::fp::FpVar;
-/// use ark_relations::r1cs::Result as ArkResult;
-/// use zk_callbacks::generic::object::TimeVar;
-/// use zk_callbacks::generic::user::UserVar;
-///
-/// fn interaction_predicate<'a>(
-///     tu_old: &'a UserVar<bool>,
-///     tu_new: &'a UserVar<bool>,
-///     cur_time: FpVar<F>,
-/// ) -> ArkResult<()> {
-///
-///     // Use any arkworks statements here with tu_old, tu_new, and the arguments (here cur_time).
-///
-///     // Enforce that the old bool is false.
-///     tu_old.data.enforce_equal(&Boolean::FALSE)?;
-///
-///     // Enforce the new bool == old bool.
-///     tu_new.data.enforce_equal(&tu_new.data)?;
-///
-///     Ok(())
-/// }
-///
 #[derive(Clone)]
 pub struct UserVar<F: PrimeField + Absorb, U: UserData<F>> {
-    /// The zero knowledge representation of the application data.
     pub data: U::UserDataVar,
-    /// The zero knowledge representation of the required fields.
     pub zk_fields: ZKFieldsVar<F>,
 }
 
@@ -187,30 +70,18 @@ impl<F: PrimeField + Absorb, U: UserData<F>> AllocVar<User<F, U>, F> for UserVar
     }
 }
 
-// UserCommitment, Old Nullifier, Proof
-/// This is a representation of the return value of an interaction. When a user interacts with a
-/// service provider, the user generates a proof that
-///  - the proper serial number was revealed
-///  - the callback entry was added
-///  - the user is an actual member of the bulletin
-///  - any application specific predicate defined through an interaction
-///
-/// Here, the return value of an interaction consists of
-///  - the commitment to the new user (public)
-///  - the old revealed serial number or nullifier (public)
-///  - a proof and a verifying key of the previous statements
 pub struct ExecutedMethod<
     F: PrimeField + Absorb,
-    S: SNARK<F>,
-    A: Clone,
-    T: RRTicket<F, A>,
-    const N: usize,
+    Snark: SNARK<F>,
+    Args: Clone,
+    Crypto: AECipherSigZK<F, Args>,
+    const NUMCBS: usize,
 > {
     pub new_object: Com<F>,
     pub old_nullifier: Nul<F>,
-    pub cb_tik_list: [(CallbackCom<F, A, T>, T::Rand); N],
-    pub cb_com_list: [Com<F>; N],
-    pub proof: S::Proof,
+    pub cb_tik_list: [(CallbackCom<F, Args, Crypto>, Crypto::Rand); NUMCBS],
+    pub cb_com_list: [Com<F>; NUMCBS],
+    pub proof: Snark::Proof,
 }
 
 pub struct ProveResult<F: PrimeField + Absorb, S: SNARK<F>> {
@@ -233,23 +104,26 @@ where
                 old_in_progress_callback_hash: F::zero(),
                 is_ingest_over: true,
             },
+            callbacks: vec![],
         }
     }
 
     pub fn interact<
-        A: Clone + std::fmt::Debug,
-        X: AllocVar<A, F> + Clone,
-        T: RRTicket<F, A>,
-        S: SNARK<F, Error = SynthesisError>,
-        const N: usize,
+        Args: Clone + std::fmt::Debug,
+        ArgsVar: AllocVar<Args, F> + Clone,
+        Crypto: AECipherSigZK<F, Args>,
+        Snark: SNARK<F, Error = SynthesisError>,
+        Bul: PublicUserBul<F, U> + Clone,
+        const NUMCBS: usize,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        method: Interaction<F, U, A, X, N>,
-        rpks: [T::Tik; N],
-        pk: &S::ProvingKey,
-        args: A,
-    ) -> Result<ExecutedMethod<F, S, A, T, N>, SynthesisError> {
+        method: Interaction<F, U, Args, ArgsVar, NUMCBS>,
+        rpks: [Crypto::SigPK; NUMCBS],
+        bul_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        pk: &Snark::ProvingKey,
+        args: Args,
+    ) -> Result<ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>, SynthesisError> {
         // Steps:
         // a) update user/self [ old user ] --> method(user) [ new user ]
         // b) update user's zk fields properly (new nul, new comrand, proper cblist, etc)
@@ -266,12 +140,13 @@ where
         new_user.zk_fields.nul = rng.gen();
         new_user.zk_fields.com_rand = rng.gen();
 
-        let cb_tik_list = create_cbs_from_interaction(rng, method.clone(), rpks);
+        let cb_tik_list: [(CallbackCom<F, Args, Crypto>, Crypto::Rand); NUMCBS] =
+            create_cbs_from_interaction(rng, method.clone(), rpks);
 
-        let issued_callbacks: [CallbackCom<F, A, T>; N] = cb_tik_list
+        let issued_callbacks: [CallbackCom<F, Args, Crypto>; NUMCBS] = cb_tik_list
             .iter()
             .map(|(x, _)| x.clone())
-            .collect::<Vec<CallbackCom<F, A, T>>>()
+            .collect::<Vec<CallbackCom<F, Args, Crypto>>>()
             .try_into()
             .unwrap();
 
@@ -282,11 +157,13 @@ where
             .try_into()
             .unwrap();
 
-        for i in 0..N {
-            new_user.zk_fields.callback_hash = add_ticket_to_hc(
-                new_user.zk_fields.callback_hash,
-                issued_callbacks[i].clone().cb_entry,
-            );
+        for item in issued_callbacks.iter().take(NUMCBS) {
+            let mut cb = Vec::new();
+            item.clone().serialize_compressed(&mut cb).unwrap();
+            new_user.callbacks.push(cb);
+
+            new_user.zk_fields.callback_hash =
+                add_ticket_to_hc(new_user.zk_fields.callback_hash, item.clone().cb_entry);
         }
 
         new_user.zk_fields.old_in_progress_callback_hash = new_user.zk_fields.callback_hash;
@@ -298,18 +175,21 @@ where
 
         let out_nul = self.zk_fields.nul;
 
-        let exec_method_circ: ExecMethodCircuit<F, U, A, X, T, N> = ExecMethodCircuit {
-            priv_old_user: self.clone(),
-            priv_new_user: new_user.clone(),
-            priv_issued_callbacks: issued_callbacks,
+        let exec_method_circ: ExecMethodCircuit<F, U, Args, ArgsVar, Crypto, Bul, NUMCBS> =
+            ExecMethodCircuit {
+                priv_old_user: self.clone(),
+                priv_new_user: new_user.clone(),
+                priv_issued_callbacks: issued_callbacks,
+                priv_bul_membership_witness: bul_data.0,
 
-            pub_new_com: out_commit,
-            pub_old_nul: out_nul,
-            pub_issued_callback_coms: issued_cb_coms,
-            pub_args: args,
+                pub_new_com: out_commit,
+                pub_old_nul: out_nul,
+                pub_issued_callback_coms: issued_cb_coms,
+                pub_args: args,
+                pub_bul_membership_data: bul_data.1,
 
-            associated_method: method,
-        };
+                associated_method: method,
+            };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
         exec_method_circ
@@ -317,7 +197,7 @@ where
             .generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
-        let proof = S::prove(pk, exec_method_circ, rng)?;
+        let proof = Snark::prove(pk, exec_method_circ, rng)?;
 
         // (D) Update current object
         *self = new_user;
@@ -332,17 +212,17 @@ where
     }
 
     pub fn prove_statement<
-        A: Clone,
-        X: AllocVar<A, F> + Clone,
-        S: SNARK<F, Error = SynthesisError>,
+        Args: Clone,
+        ArgsVar: AllocVar<Args, F> + Clone,
+        Snark: SNARK<F, Error = SynthesisError>,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, X>,
-        pk: &S::ProvingKey,
-        args: A,
-    ) -> Result<ProveResult<F, S>, SynthesisError> {
-        let ppcirc: ProvePredicateCircuit<F, U, A, X> = ProvePredicateCircuit {
+        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, ArgsVar>,
+        pk: &Snark::ProvingKey,
+        args: Args,
+    ) -> Result<ProveResult<F, Snark>, SynthesisError> {
+        let ppcirc: ProvePredicateCircuit<F, U, Args, ArgsVar> = ProvePredicateCircuit {
             priv_user: self.clone(),
             pub_com: self.commit(),
 
@@ -354,7 +234,7 @@ where
         ppcirc.clone().generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
-        let proof = S::prove(pk, ppcirc, rng)?;
+        let proof = Snark::prove(pk, ppcirc, rng)?;
 
         Ok(ProveResult {
             object: self.commit(),
@@ -363,43 +243,37 @@ where
     }
 
     pub fn prove_statement_and_in<
-        A: Clone,
-        D: Clone,
-        DV: AllocVar<D, F> + Clone,
-        X: AllocVar<A, F> + Clone,
-        S: SNARK<F, Error = SynthesisError>,
-        B: PublicUserBul<F, U, User = U> + Clone,
+        Args: Clone,
+        ArgsVar: AllocVar<Args, F> + Clone,
+        Snark: SNARK<F, Error = SynthesisError>,
+        Bul: PublicUserBul<F, U> + Clone,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, X>,
-        pk: &S::ProvingKey,
-        bul: B,
-        membership_data: D,
-        args: A,
-    ) -> Result<S::Proof, SynthesisError> {
-        let ppcirc: ProvePredInCircuit<F, U, A, X, D, DV, B> = ProvePredInCircuit {
+        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, ArgsVar>,
+        pk: &Snark::ProvingKey,
+        memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        args: Args,
+    ) -> Result<Snark::Proof, SynthesisError> {
+        let ppcirc: ProvePredInCircuit<F, U, Args, ArgsVar, Bul> = ProvePredInCircuit {
             priv_user: self.clone(),
-            priv_extra_membership_data: membership_data,
-
+            priv_extra_membership_data: memb_data.0,
+            pub_extra_membership_data: memb_data.1,
             pub_args: args,
-            associated_bul: bul,
             associated_method: predicate,
-            _ph: PhantomData,
         };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
         ppcirc.clone().generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
-        let proof = S::prove(pk, ppcirc, rng)?;
+        let proof = Snark::prove(pk, ppcirc, rng)?;
 
         Ok(proof)
     }
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
-    /// Commit to a user.
     pub fn commit(&self) -> Com<F> {
         let ser_data = self.data.serialize_elements();
         let ser_fields = self.zk_fields.serialize();
@@ -407,7 +281,6 @@ impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
         Poseidon::<2>::hash(&full_dat)
     }
 
-    /// Commit to a user in zero knowledge.
     pub fn commit_in_zk(user_var: UserVar<F, U>) -> Result<ComVar<F>, SynthesisError> {
         let ser_data = U::serialize_in_zk(user_var.data)?;
         let ser_fields = user_var.zk_fields.serialize()?;
