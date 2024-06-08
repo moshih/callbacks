@@ -102,7 +102,7 @@ impl<F: PrimeField, A> RRSigner<(), A, (), PlainTikCrypto<F>> for PlainTikCrypto
 where
     Standard: Distribution<F>,
 {
-    fn gen() -> Self {
+    fn gen(_rng: &mut (impl CryptoRng + RngCore)) -> Self {
         PlainTikCrypto(F::zero())
     }
 

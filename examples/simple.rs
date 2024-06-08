@@ -22,8 +22,8 @@ use zk_object::zk_object;
 #[zk_object(F)]
 #[derive(Default)]
 struct TestUserData {
-    is_banned: bool,
-    field2: u8,
+    token1: F,
+    token2: F,
 }
 
 fn int_meth<'a>(tu: &'a User<F, TestUserData>, _args: F) -> User<F, TestUserData> {
@@ -35,17 +35,17 @@ fn int_meth_pred<'a>(
     tu_new: &'a UserVar<F, TestUserData>,
     _args: FpVar<F>,
 ) -> ArkResult<()> {
-    tu_old.data.is_banned.enforce_equal(&Boolean::FALSE)?;
     tu_old
         .data
-        .is_banned
-        .enforce_equal(&tu_new.data.is_banned)?;
+        .token1
+        .enforce_equal(&FpVar::Constant(F::from(1)))?; // enforce a user has a token
+    tu_old.data.token1.enforce_equal(&tu_new.data.token1)?;
     Ok(())
 }
 
 fn some_pred<'a, 'b>(
-    tu: &'a UserVar<F, TestUserData>,
-    com: &'b FpVar<F>,
+    _tu: &'a UserVar<F, TestUserData>,
+    _com: &'b FpVar<F>,
     _args: UnitVar,
 ) -> ArkResult<()> {
     Ok(())
@@ -53,7 +53,7 @@ fn some_pred<'a, 'b>(
 
 fn cb_meth<'a>(tu: &'a User<F, TestUserData>, _args: F) -> User<F, TestUserData> {
     let mut out = tu.clone();
-    out.data.is_banned = true;
+    out.data.token1 = F::from(0); // revoke a token
     out
 }
 
@@ -62,8 +62,10 @@ fn cb_pred<'a>(
     tu_new: &'a UserVar<F, TestUserData>,
     _args: FpVar<F>,
 ) -> ArkResult<()> {
-    tu_old.data.is_banned.enforce_equal(&Boolean::FALSE)?;
-    tu_new.data.is_banned.enforce_equal(&Boolean::TRUE)?;
+    tu_old
+        .data
+        .token1
+        .enforce_equal(&FpVar::Constant(F::from(0)))?;
     Ok(())
 }
 
@@ -83,7 +85,7 @@ fn main() {
 
     let mut rng = thread_rng();
 
-    let co_store = CentralObjectStore {
+    let _co_store = CentralObjectStore {
         data: HashMap::new(),
         nuls: vec![],
         pubkey: F::from(0),
@@ -92,7 +94,7 @@ fn main() {
     let (pk, vk) =
         interaction.generate_keys::<Groth16<E>, PlainTikCrypto<F>, CentralObjectStore<F>>(&mut rng);
 
-    let (pki, vki) = generate_keys_for_statement_in::<
+    let (pki, _vki) = generate_keys_for_statement_in::<
         F,
         TestUserData,
         (),
@@ -103,8 +105,8 @@ fn main() {
 
     let mut u = User::create(
         TestUserData {
-            is_banned: false,
-            field2: 30,
+            token1: F::from(1),
+            token2: F::from(3),
         },
         &mut rng,
     );

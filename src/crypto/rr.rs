@@ -7,7 +7,7 @@ pub trait RRSigner<S, M, R, V: RRVerifier<S, M, R>> {
 
     fn sk_to_pk(&self) -> V;
 
-    fn gen() -> Self;
+    fn gen(rng: &mut (impl CryptoRng + RngCore)) -> Self;
 
     fn rerand(&self, randomness: R) -> Self;
 }

@@ -2,7 +2,6 @@ use crate::crypto::enc::AECipherSigZK;
 use crate::crypto::rr::RRVerifier;
 use crate::generic::object::{Com, ComVar, Nul};
 use crate::generic::user::UserData;
-use crate::generic::user::UserVar;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_ff::ToConstraintField;
