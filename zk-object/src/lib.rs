@@ -172,7 +172,7 @@ pub fn zk_object(
                 #ast
 
                 #[derive(Clone)]
-                struct #zk_var_name {
+                pub struct #zk_var_name {
                     #fields
                 }
 
