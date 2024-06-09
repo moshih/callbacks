@@ -54,7 +54,7 @@ fn derive_userdata_and_zk(
                     let name = &f.ident;
                     let ty = &f.ty;
                     quote_spanned! {f.span() =>
-                        #name: <#ty as zk_callbacks::generic::user::UserData<#ft>>::UserDataVar
+                        pub #name: <#ty as zk_callbacks::generic::user::UserData<#ft>>::UserDataVar
                     }
                 });
 
