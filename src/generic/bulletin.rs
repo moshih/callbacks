@@ -19,14 +19,17 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
 
     type MembershipWitness: Clone + Default;
     type MembershipWitnessVar: AllocVar<Self::MembershipWitness, F> + Clone;
-    type MembershipPub: Clone + Default;
+    type MembershipPub: Clone + Default + ToConstraintField<F>;
     type MembershipPubVar: AllocVar<Self::MembershipPub, F> + Clone;
 
-    fn verify_in<const NUMCBS: usize>(
+    fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
         cb_com_list: [Com<F>; NUMCBS],
+        args: Args,
+        proof: Snark::Proof,
+        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> bool;
 
     fn enforce_membership_of(
@@ -46,19 +49,14 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         cb_com_list: [Com<F>; NUMCBS],
     ) -> Result<(), Self::Error>;
 
-    fn verify_interaction<
-        Args: ToConstraintField<F>,
-        MembPub: ToConstraintField<F>,
-        Snark: SNARK<F>,
-        const NUMCBS: usize,
-    >(
+    fn verify_interaction<Args: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
         args: Args,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, MembPub),
+        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> bool {
         let circuit_key = pub_data.0;
         let public_membership_input = pub_data.1;
@@ -76,7 +74,6 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
 
     fn verify_interact_and_append<
         Args: ToConstraintField<F>,
-        MembPub: ToConstraintField<F>,
         Snark: SNARK<F>,
         const NUMCBS: usize,
     >(
@@ -86,9 +83,9 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         args: Args,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, MembPub),
+        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.verify_interaction::<Args, MembPub, Snark, NUMCBS>(
+        let out = self.verify_interaction::<Args, Snark, NUMCBS>(
             object,
             old_nul,
             args,

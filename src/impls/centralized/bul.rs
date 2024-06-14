@@ -8,7 +8,13 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::SynthesisError;
+use ark_snark::SNARK;
 use std::collections::HashMap;
+
+// Object
+// Nullifier
+// Signature (Field Element)
+// Callback List?
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct COData<F: PrimeField> {
@@ -27,7 +33,7 @@ pub struct CentralObjectStore<F: PrimeField> {
 impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for CentralObjectStore<F> {
     type Error = ();
 
-    type MembershipWitness = (); // signature
+    type MembershipWitness = (); // signature but the entirety of humanity.
 
     type MembershipWitnessVar = UnitVar;
 
@@ -35,11 +41,14 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for CentralObje
 
     type MembershipPubVar = UnitVar;
 
-    fn verify_in<const NUMCBS: usize>(
+    fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
         cb_com_list: [Com<F>; NUMCBS],
+        _args: Args,
+        _proof: Snark::Proof,
+        _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> bool {
         self.data.contains_key(
             &(COData {

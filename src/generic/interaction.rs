@@ -1,4 +1,5 @@
 use crate::crypto::enc::AECipherSigZK;
+use crate::crypto::hash::FieldHash;
 use crate::generic::bulletin::PublicUserBul;
 use crate::generic::callbacks::add_ticket_to_hc_zk;
 use crate::generic::callbacks::create_defaults;
@@ -16,6 +17,7 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as ArkResult},
 };
 use ark_snark::SNARK;
+use core::marker::PhantomData;
 use rand::distributions::{Distribution, Standard};
 use rand::{CryptoRng, RngCore};
 
@@ -62,6 +64,7 @@ where
     Standard: Distribution<F>,
 {
     pub fn generate_keys<
+        H: FieldHash<F>,
         Snark: SNARK<F>,
         Crypto: AECipherSigZK<F, Args>,
         Bul: PublicUserBul<F, U> + Clone,
@@ -75,19 +78,21 @@ where
 
         let x = (*self).clone();
 
-        let out: ExecMethodCircuit<F, U, Args, ArgsVar, Crypto, Bul, NUMCBS> = ExecMethodCircuit {
-            priv_old_user: u.clone(),
-            priv_new_user: u.clone(),
-            priv_issued_callbacks: cbs.clone(),
-            priv_bul_membership_witness: Bul::MembershipWitness::default(),
+        let out: ExecMethodCircuit<F, H, U, Args, ArgsVar, Crypto, Bul, NUMCBS> =
+            ExecMethodCircuit {
+                priv_old_user: u.clone(),
+                priv_new_user: u.clone(),
+                priv_issued_callbacks: cbs.clone(),
+                priv_bul_membership_witness: Bul::MembershipWitness::default(),
 
-            pub_new_com: u.commit(),
-            pub_old_nul: u.zk_fields.nul,
-            pub_issued_callback_coms: cbs.map(|x| x.commit()),
-            pub_args: Args::default(),
-            associated_method: x,
-            pub_bul_membership_data: Bul::MembershipPub::default(),
-        };
+                pub_new_com: u.commit::<H>(),
+                pub_old_nul: u.zk_fields.nul,
+                pub_issued_callback_coms: cbs.map(|x| x.commit::<H>()),
+                pub_args: Args::default(),
+                associated_method: x,
+                pub_bul_membership_data: Bul::MembershipPub::default(),
+                _phantom_hash: PhantomData,
+            };
         Snark::circuit_specific_setup(out, rng).unwrap()
     }
 }
@@ -95,6 +100,7 @@ where
 #[derive(Clone)]
 pub(crate) struct ExecMethodCircuit<
     F: PrimeField + Absorb,
+    H: FieldHash<F>,
     U: UserData<F>,
     Args: Clone,
     ArgsVar: AllocVar<Args, F>,
@@ -116,17 +122,19 @@ pub(crate) struct ExecMethodCircuit<
     pub pub_bul_membership_data: Bul::MembershipPub,
 
     pub associated_method: Interaction<F, U, Args, ArgsVar, NUMCBS>,
+    pub _phantom_hash: PhantomData<H>,
 }
 
 impl<
         F: PrimeField + Absorb,
+        H: FieldHash<F>,
         U: UserData<F>,
         Args: Clone + std::fmt::Debug,
         ArgsVar: AllocVar<Args, F>,
         Crypto: AECipherSigZK<F, Args>,
         Bul: PublicUserBul<F, U> + Clone,
         const NUMCBS: usize,
-    > ConstraintSynthesizer<F> for ExecMethodCircuit<F, U, Args, ArgsVar, Crypto, Bul, NUMCBS>
+    > ConstraintSynthesizer<F> for ExecMethodCircuit<F, H, U, Args, ArgsVar, Crypto, Bul, NUMCBS>
 {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> ArkResult<()> {
         // Create private variables
@@ -155,7 +163,7 @@ impl<
 
         // Enforce old_user in bulletin
         Bul::enforce_membership_of(
-            User::commit_in_zk(old_user_var.clone())?,
+            User::commit_in_zk::<H>(old_user_var.clone())?,
             priv_bul_witness,
             pub_bul_data,
         )?;
@@ -175,10 +183,10 @@ impl<
         for i in 0..NUMCBS {
             // Enforce that the callback commitments are well-formed
             issued_cb_coms.0[i]
-                .enforce_equal(&CallbackCom::commit_in_zk(issued_cbs.0[i].clone())?)?;
+                .enforce_equal(&CallbackCom::commit_in_zk::<H>(issued_cbs.0[i].clone())?)?;
 
             // Append callbacks to the callback list
-            add_ticket_to_hc_zk(
+            add_ticket_to_hc_zk::<F, H, Args, Crypto>(
                 &mut old_zk_fields.callback_hash,
                 issued_cbs.0[i].clone().cb_entry,
             )?;
@@ -204,7 +212,7 @@ impl<
             .enforce_equal(&old_zk_fields.is_ingest_over)?;
 
         // Enforce that Com(new_user) == new_com
-        let com = User::commit_in_zk(new_user_var)?;
+        let com = User::commit_in_zk::<H>(new_user_var)?;
 
         new_com_var.enforce_equal(&com)?;
 
@@ -214,6 +222,7 @@ impl<
 
 pub fn generate_keys_for_statement<
     F: PrimeField + Absorb,
+    H: FieldHash<F>,
     U: UserData<F> + Default,
     Args: Clone + Default,
     ArgsVar: AllocVar<Args, F>,
@@ -228,7 +237,7 @@ where
     let u = User::create(U::default(), rng);
     let out = ProvePredicateCircuit {
         priv_user: u.clone(),
-        pub_com: u.commit(),
+        pub_com: u.commit::<H>(),
         pub_args: Args::default(),
         associated_method: pred,
     };
@@ -268,6 +277,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, A: Clone, X: AllocVar<A, F>> Constr
 
 pub fn generate_keys_for_statement_in<
     F: PrimeField + Absorb,
+    H: FieldHash<F>,
     U: UserData<F> + Default,
     Args: Clone + Default,
     ArgsVar: AllocVar<Args, F>,
@@ -281,12 +291,14 @@ where
     Standard: Distribution<F>,
 {
     let u = User::create(U::default(), rng);
-    let out: ProvePredInCircuit<F, U, Args, ArgsVar, Bul> = ProvePredInCircuit {
+    let out: ProvePredInCircuit<F, H, U, Args, ArgsVar, Bul> = ProvePredInCircuit {
         priv_user: u.clone(),
         priv_extra_membership_data: Bul::MembershipWitness::default(),
         pub_args: Args::default(),
         pub_extra_membership_data: Bul::MembershipPub::default(),
         associated_method: pred,
+
+        _phantom_hash: PhantomData,
     };
     Snark::circuit_specific_setup(out, rng).unwrap()
 }
@@ -294,6 +306,7 @@ where
 #[derive(Clone)]
 pub(crate) struct ProvePredInCircuit<
     F: PrimeField + Absorb,
+    H: FieldHash<F>,
     U: UserData<F>,
     Args: Clone,
     ArgsVar: AllocVar<Args, F>,
@@ -307,15 +320,18 @@ pub(crate) struct ProvePredInCircuit<
     pub pub_args: Args,
     pub pub_extra_membership_data: Bul::MembershipPub,
     pub associated_method: SingularPredicate<UserVar<F, U>, ComVar<F>, ArgsVar>,
+
+    pub _phantom_hash: PhantomData<H>,
 }
 
 impl<
         F: PrimeField + Absorb,
+        H: FieldHash<F>,
         U: UserData<F>,
         Args: Clone,
         ArgsVar: AllocVar<Args, F>,
         Bul: PublicUserBul<F, U>,
-    > ConstraintSynthesizer<F> for ProvePredInCircuit<F, U, Args, ArgsVar, Bul>
+    > ConstraintSynthesizer<F> for ProvePredInCircuit<F, H, U, Args, ArgsVar, Bul>
 {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> ArkResult<()> {
         let user_var = UserVar::new_witness(ns!(cs, "user"), || Ok(self.priv_user))?;
@@ -331,11 +347,11 @@ impl<
                 Ok(self.pub_extra_membership_data)
             })?;
 
-        let com = User::commit_in_zk(user_var.clone())?;
+        let com = User::commit_in_zk::<H>(user_var.clone())?;
 
         (self.associated_method)(&user_var, &com, args_var)?;
         Bul::enforce_membership_of(
-            User::commit_in_zk(user_var)?,
+            User::commit_in_zk::<H>(user_var)?,
             extra_data_for_membership,
             pub_data_for_membership,
         )?;

@@ -1,6 +1,5 @@
 use crate::crypto::enc::AECipherSigZK;
-use crate::crypto::hash::HasherZK;
-use crate::crypto::hash::Poseidon;
+use crate::crypto::hash::FieldHash;
 use crate::generic::bulletin::PublicUserBul;
 use crate::generic::callbacks::add_ticket_to_hc;
 use crate::generic::callbacks::create_cbs_from_interaction;
@@ -109,6 +108,7 @@ where
     }
 
     pub fn interact<
+        H: FieldHash<F>,
         Args: Clone + std::fmt::Debug,
         ArgsVar: AllocVar<Args, F> + Clone,
         Crypto: AECipherSigZK<F, Args>,
@@ -152,7 +152,7 @@ where
 
         let issued_cb_coms = cb_tik_list
             .iter()
-            .map(|(x, _)| x.commit())
+            .map(|(x, _)| x.commit::<H>())
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
@@ -162,8 +162,10 @@ where
             item.clone().serialize_compressed(&mut cb).unwrap();
             new_user.callbacks.push(cb);
 
-            new_user.zk_fields.callback_hash =
-                add_ticket_to_hc(new_user.zk_fields.callback_hash, item.clone().cb_entry);
+            new_user.zk_fields.callback_hash = add_ticket_to_hc::<F, H, Args, Crypto>(
+                new_user.zk_fields.callback_hash,
+                item.clone().cb_entry,
+            );
         }
 
         new_user.zk_fields.old_in_progress_callback_hash = new_user.zk_fields.callback_hash;
@@ -171,11 +173,11 @@ where
         // (C) Generate proof of correctness
         // Extract the zk fields from the objects to do bookkeeping
 
-        let out_commit = new_user.commit();
+        let out_commit = new_user.commit::<H>();
 
         let out_nul = self.zk_fields.nul;
 
-        let exec_method_circ: ExecMethodCircuit<F, U, Args, ArgsVar, Crypto, Bul, NUMCBS> =
+        let exec_method_circ: ExecMethodCircuit<F, H, U, Args, ArgsVar, Crypto, Bul, NUMCBS> =
             ExecMethodCircuit {
                 priv_old_user: self.clone(),
                 priv_new_user: new_user.clone(),
@@ -189,6 +191,7 @@ where
                 pub_bul_membership_data: bul_data.1,
 
                 associated_method: method,
+                _phantom_hash: core::marker::PhantomData,
             };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
@@ -212,6 +215,7 @@ where
     }
 
     pub fn prove_statement<
+        H: FieldHash<F>,
         Args: Clone,
         ArgsVar: AllocVar<Args, F> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
@@ -224,7 +228,7 @@ where
     ) -> Result<ProveResult<F, Snark>, SynthesisError> {
         let ppcirc: ProvePredicateCircuit<F, U, Args, ArgsVar> = ProvePredicateCircuit {
             priv_user: self.clone(),
-            pub_com: self.commit(),
+            pub_com: self.commit::<H>(),
 
             pub_args: args,
             associated_method: predicate,
@@ -237,12 +241,13 @@ where
         let proof = Snark::prove(pk, ppcirc, rng)?;
 
         Ok(ProveResult {
-            object: self.commit(),
+            object: self.commit::<H>(),
             proof,
         })
     }
 
     pub fn prove_statement_and_in<
+        H: FieldHash<F>,
         Args: Clone,
         ArgsVar: AllocVar<Args, F> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
@@ -255,12 +260,14 @@ where
         memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
         args: Args,
     ) -> Result<Snark::Proof, SynthesisError> {
-        let ppcirc: ProvePredInCircuit<F, U, Args, ArgsVar, Bul> = ProvePredInCircuit {
+        let ppcirc: ProvePredInCircuit<F, H, U, Args, ArgsVar, Bul> = ProvePredInCircuit {
             priv_user: self.clone(),
             priv_extra_membership_data: memb_data.0,
             pub_extra_membership_data: memb_data.1,
             pub_args: args,
             associated_method: predicate,
+
+            _phantom_hash: core::marker::PhantomData,
         };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
@@ -274,18 +281,20 @@ where
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
-    pub fn commit(&self) -> Com<F> {
+    pub fn commit<H: FieldHash<F>>(&self) -> Com<F> {
         let ser_data = self.data.serialize_elements();
         let ser_fields = self.zk_fields.serialize();
         let full_dat = [ser_data.as_slice(), ser_fields.as_slice()].concat();
-        Poseidon::<2>::hash(&full_dat)
+        H::hash(&full_dat)
     }
 
-    pub fn commit_in_zk(user_var: UserVar<F, U>) -> Result<ComVar<F>, SynthesisError> {
+    pub fn commit_in_zk<H: FieldHash<F>>(
+        user_var: UserVar<F, U>,
+    ) -> Result<ComVar<F>, SynthesisError> {
         let ser_data = U::serialize_in_zk(user_var.data)?;
         let ser_fields = user_var.zk_fields.serialize()?;
         let full_dat = [ser_data.as_slice(), ser_fields.as_slice()].concat();
 
-        Poseidon::<2>::hash_in_zk(&full_dat)
+        H::hash_in_zk(&full_dat)
     }
 }

@@ -1,6 +1,5 @@
 use crate::crypto::enc::{AECipherSigZK, CPACipher};
-use crate::crypto::hash::HasherZK;
-use crate::crypto::hash::Poseidon;
+use crate::crypto::hash::FieldHash;
 use crate::crypto::rr::RRVerifier;
 use crate::generic::interaction::Interaction;
 use crate::generic::object::{
@@ -127,21 +126,21 @@ pub struct CallbackComVar<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherS
 impl<Args: Clone, Crypto: AECipherSigZK<F, Args>, F: PrimeField + Absorb>
     CallbackCom<F, Args, Crypto>
 {
-    pub(crate) fn commit(&self) -> Com<F> {
+    pub(crate) fn commit<H: FieldHash<F>>(&self) -> Com<F> {
         let ser_fields = self.cb_entry.serialize();
         let com_rand_ser = self.com_rand.to_field_elements().unwrap();
         let full_dat = [ser_fields.as_slice(), com_rand_ser.as_slice()].concat();
-        Poseidon::<2>::hash(&full_dat)
+        H::hash(&full_dat)
     }
 
-    pub(crate) fn commit_in_zk(
+    pub(crate) fn commit_in_zk<H: FieldHash<F>>(
         cb_var: CallbackComVar<F, Args, Crypto>,
     ) -> Result<ComVar<F>, SynthesisError> {
         let ser_fields = cb_var.cb_entry.serialize()?;
         let com_rand_ser = cb_var.com_rand.to_constraint_field()?;
 
         let full_dat = [ser_fields.as_slice(), com_rand_ser.as_slice()].concat();
-        Poseidon::<2>::hash_in_zk(&full_dat)
+        H::hash_in_zk(&full_dat)
     }
 }
 
@@ -257,15 +256,25 @@ where
         .unwrap()
 }
 
-pub fn add_ticket_to_hc<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>(
+pub fn add_ticket_to_hc<
+    F: PrimeField + Absorb,
+    H: FieldHash<F>,
+    Args: Clone,
+    Crypto: AECipherSigZK<F, Args>,
+>(
     hash_chain: CBHash<F>,
     ticket: CallbackTicket<F, Args, Crypto>,
 ) -> CBHash<F> {
     let serialized_ticket = ticket.serialize();
-    Poseidon::<2>::hash(&[&[hash_chain], serialized_ticket.as_slice()].concat())
+    H::hash(&[&[hash_chain], serialized_ticket.as_slice()].concat())
 }
 
-pub fn add_ticket_to_hc_zk<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>(
+pub fn add_ticket_to_hc_zk<
+    F: PrimeField + Absorb,
+    H: FieldHash<F>,
+    Args: Clone,
+    Crypto: AECipherSigZK<F, Args>,
+>(
     hash_chain: &mut CBHashVar<F>,
     ticket: CallbackTicketVar<F, Args, Crypto>,
 ) -> Result<(), SynthesisError> {
@@ -274,7 +283,7 @@ pub fn add_ticket_to_hc_zk<F: PrimeField + Absorb, Args: Clone, Crypto: AECipher
 
     let full_dat = [ser_hc.as_slice(), ser_ticket.as_slice()].concat();
 
-    *hash_chain = Poseidon::<2>::hash_in_zk(&full_dat)?;
+    *hash_chain = H::hash_in_zk(&full_dat)?;
 
     Ok(())
 }

@@ -57,7 +57,6 @@ pub trait ServiceProvider {
         U: UserData<F>,
         Snark: SNARK<F>,
         Args: Clone + ToConstraintField<F>,
-        MembPub: ToConstraintField<F>,
         Crypto: AECipherSigZK<F, Args>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
@@ -67,14 +66,15 @@ pub trait ServiceProvider {
         sk: Crypto::SigSK,
         args: Args,
         bul: Bul,
-        pub_data: (Snark::VerifyingKey, MembPub),
+        pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
     ) -> bool {
-        let circuit_key = pub_data.0;
-        let public_membership_input = pub_data.1;
-        let out = bul.verify_in(
+        let out = bul.verify_in::<Args, Snark, NUMCBS>(
             interaction_request.new_object,
             interaction_request.old_nullifier,
             interaction_request.cb_com_list,
+            args.clone(),
+            interaction_request.proof.clone(),
+            pub_data.clone(),
         );
         if !out {
             return false;
@@ -93,6 +93,9 @@ pub trait ServiceProvider {
             }
         }
 
+        let circuit_key = pub_data.0;
+        let public_membership_input = pub_data.1;
+
         let mut pub_inputs = vec![
             interaction_request.new_object,
             interaction_request.old_nullifier,
@@ -108,7 +111,6 @@ pub trait ServiceProvider {
         U: UserData<F>,
         Snark: SNARK<F>,
         Args: Clone + ToConstraintField<F>,
-        MembPub: ToConstraintField<F>,
         Crypto: AECipherSigZK<F, Args>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
@@ -118,7 +120,7 @@ pub trait ServiceProvider {
         sk: Crypto::SigSK,
         args: Args,
         bul: Bul,
-        pub_data: (Snark::VerifyingKey, MembPub),
+        pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
     ) -> Result<(), BulError<Self::Error>> {
         let out = self.approve_interaction(&interaction_request, sk, args, bul, pub_data);
 

@@ -1,7 +1,8 @@
-use ark_bn254::{Bn254 as E, Fr as F};
+use ark_bn254::Fr as F;
 use zk_callbacks::generic::object::ZKFields;
 use zk_callbacks::generic::user::User;
 use zk_callbacks::generic::user::UserData;
+use zk_callbacks::impls::hash::CircPoseidon;
 use zk_object::zk_object;
 
 #[zk_object(F)]
@@ -25,6 +26,7 @@ fn main() {
         old_in_progress_callback_hash: F::from(0),
         is_ingest_over: true,
     };
+
     let out = User {
         data: data.clone(),
         zk_fields: zk_fields.clone(),
@@ -45,4 +47,6 @@ fn main() {
         }
     }
     println!();
+
+    println!("{}", out.commit::<CircPoseidon<2>>());
 }

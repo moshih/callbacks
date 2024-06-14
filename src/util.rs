@@ -149,25 +149,3 @@ impl<I, F: Field, A: AllocVar<I, F>, const N: usize> AllocVar<[I; N], F> for Arr
         })?))
     }
 }
-
-pub struct VecVar<T>(pub Vec<T>);
-
-impl<F: Field, T: R1CSVar<F>> R1CSVar<F> for VecVar<T> {
-    type Value = Vec<T::Value>;
-
-    fn cs(&self) -> ConstraintSystemRef<F> {
-        let mut result = ConstraintSystemRef::None;
-        for var in &self.0 {
-            result = var.cs().or(result);
-        }
-        result
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        let mut result = Vec::new();
-        for var in &self.0 {
-            result.push(var.value()?);
-        }
-        Ok(result)
-    }
-}
