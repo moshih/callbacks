@@ -6,15 +6,14 @@ use ark_relations::r1cs::Result as ArkResult;
 use ark_relations::r1cs::ToConstraintField;
 use ark_snark::SNARK;
 use rand::thread_rng;
-use std::collections::HashMap;
 use zk_callbacks::generic::interaction::generate_keys_for_statement_in;
 use zk_callbacks::generic::interaction::Callback;
 use zk_callbacks::generic::interaction::Interaction;
 use zk_callbacks::generic::object::Id;
 use zk_callbacks::generic::object::Time;
 use zk_callbacks::generic::user::{User, UserVar};
-use zk_callbacks::impls::centralized::bul::CentralObjectStore;
 use zk_callbacks::impls::centralized::crypto::PlainTikCrypto;
+use zk_callbacks::impls::dummy::DummyObjectStore;
 use zk_callbacks::impls::hash::Poseidon;
 use zk_callbacks::util::UnitVar;
 use zk_object::zk_object;
@@ -85,16 +84,10 @@ fn main() {
 
     let mut rng = thread_rng();
 
-    let _co_store = CentralObjectStore {
-        data: HashMap::new(),
-        nuls: vec![],
-        pubkey: F::from(0),
-    };
+    let _co_store = DummyObjectStore;
 
     let (pk, vk) = interaction
-        .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, CentralObjectStore<F>>(
-            &mut rng,
-        );
+        .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, DummyObjectStore>(&mut rng);
 
     let (pki, _vki) = generate_keys_for_statement_in::<
         F,
@@ -103,7 +96,7 @@ fn main() {
         (),
         UnitVar,
         Groth16<E>,
-        CentralObjectStore<F>,
+        DummyObjectStore,
     >(some_pred, &mut rng);
 
     let mut u = User::create(
@@ -114,7 +107,7 @@ fn main() {
         &mut rng,
     );
 
-    u.prove_statement_and_in::<Poseidon<2>, (), UnitVar, Groth16<E>, CentralObjectStore<F>>(
+    u.prove_statement_and_in::<Poseidon<2>, (), UnitVar, Groth16<E>, DummyObjectStore>(
         &mut rng,
         some_pred,
         &pki,
@@ -124,7 +117,7 @@ fn main() {
     .unwrap();
 
     let exec_method = u
-        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, CentralObjectStore<F>, 1>(
+        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, DummyObjectStore, 1>(
             &mut rng,
             interaction.clone(),
             [PlainTikCrypto(F::from(0))],
@@ -135,7 +128,7 @@ fn main() {
         .unwrap();
 
     let exec_method2 = u
-        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, CentralObjectStore<F>, 1>(
+        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, DummyObjectStore, 1>(
             &mut rng,
             interaction.clone(),
             [PlainTikCrypto(F::from(0))],

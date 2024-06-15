@@ -1,36 +1,27 @@
 use crate::generic::bulletin::{PublicUserBul, UserBul};
 use crate::generic::object::{Com, ComVar, Nul};
 use crate::generic::user::UserData;
-use crate::generic::user::UserVar;
 use crate::util::UnitVar;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use ark_r1cs_std::eq::EqGadget;
-use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::SynthesisError;
+use ark_serialize::CanonicalSerialize;
+use ark_serialize::Compress;
 use ark_snark::SNARK;
-use std::collections::HashMap;
 
-// Object
-// Nullifier
-// Signature (Field Element)
-// Callback List?
+pub trait DbHandle {
+    fn insert(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>, sig: Vec<u8>);
 
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub struct COData<F: PrimeField> {
-    pub object: Com<F>,
-    pub old_nul: Nul<F>,
-    pub cb_com_list: Vec<Com<F>>,
+    fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
+
+    fn has_never_recieved_nul(&self, nul: Vec<u8>) -> bool;
 }
 
-#[derive(Clone)]
-pub struct CentralObjectStore<F: PrimeField> {
-    pub data: HashMap<COData<F>, F>,
-    pub nuls: Vec<Nul<F>>,
-    pub pubkey: F,
-}
+pub struct CentralObjectStore<D: DbHandle>(pub D);
 
-impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for CentralObjectStore<F> {
+impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
+    for CentralObjectStore<D>
+{
     type Error = ();
 
     type MembershipWitness = (); // signature but the entirety of humanity.
@@ -50,13 +41,20 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for CentralObje
         _proof: Snark::Proof,
         _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> bool {
-        self.data.contains_key(
-            &(COData {
-                object,
-                old_nul,
-                cb_com_list: cb_com_list.to_vec(),
-            }),
-        )
+        let mut object_serial: Vec<u8> = Vec::new();
+        object
+            .serialize_with_mode(&mut object_serial, Compress::No)
+            .unwrap();
+        let mut old_nul_serial: Vec<u8> = Vec::new();
+        old_nul
+            .serialize_with_mode(&mut old_nul_serial, Compress::No)
+            .unwrap();
+        let mut cb_com_list_serial: Vec<u8> = Vec::new();
+        cb_com_list
+            .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
+            .unwrap();
+        self.0
+            .is_in(object_serial, old_nul_serial, cb_com_list_serial)
     }
 
     fn enforce_membership_of(
@@ -68,9 +66,12 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for CentralObje
     }
 }
 
-impl<F: PrimeField + Absorb, U: UserData<F>> UserBul<F, U> for CentralObjectStore<F> {
+impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for CentralObjectStore<D> {
     fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool {
-        !self.nuls.contains(nul)
+        let mut nul_serial: Vec<u8> = Vec::new();
+        nul.serialize_with_mode(&mut nul_serial, Compress::No)
+            .unwrap();
+        self.0.has_never_recieved_nul(nul_serial)
     }
 
     fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
@@ -80,16 +81,85 @@ impl<F: PrimeField + Absorb, U: UserData<F>> UserBul<F, U> for CentralObjectStor
         cb_com_list: [Com<F>; NUMCBS],
         _args: Args,
         _proof: Snark::Proof,
-        _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), Self::Error> {
-        let new_co = COData {
-            object,
-            old_nul,
-            cb_com_list: cb_com_list.to_vec(),
-        };
-        self.data
-            .insert(new_co, F::zero()) // CHANGE TO SIGN DATA
-            .ok_or(())
-            .map_or(Err(()), |_x| Ok(()))
+        let mut object_serial: Vec<u8> = Vec::new();
+        object
+            .serialize_with_mode(&mut object_serial, Compress::No)
+            .unwrap();
+        let mut old_nul_serial: Vec<u8> = Vec::new();
+        old_nul
+            .serialize_with_mode(&mut old_nul_serial, Compress::No)
+            .unwrap();
+        let mut pub_data_serial: Vec<u8> = Vec::new();
+        pub_data
+            .serialize_with_mode(&mut pub_data_serial, Compress::No)
+            .unwrap();
+        let mut cb_com_list_serial: Vec<u8> = Vec::new();
+        cb_com_list
+            .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
+            .unwrap();
+
+        self.0.insert(
+            object_serial,
+            old_nul_serial,
+            cb_com_list_serial,
+            pub_data_serial,
+        );
+
+        Ok(())
+    }
+}
+
+pub trait NetworkHandle {
+    fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
+}
+
+pub struct CentralNetBulStore<N: NetworkHandle>(pub N);
+
+impl<F: PrimeField + Absorb, U: UserData<F>, N: NetworkHandle> PublicUserBul<F, U>
+    for CentralNetBulStore<N>
+{
+    type Error = ();
+
+    type MembershipWitness = (); // signature but the entirety of humanity.
+
+    type MembershipWitnessVar = UnitVar;
+
+    type MembershipPub = ();
+
+    type MembershipPubVar = UnitVar;
+
+    fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+        &self,
+        object: Com<F>,
+        old_nul: Nul<F>,
+        cb_com_list: [Com<F>; NUMCBS],
+        _args: Args,
+        _proof: Snark::Proof,
+        _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+    ) -> bool {
+        let mut object_serial: Vec<u8> = Vec::new();
+        object
+            .serialize_with_mode(&mut object_serial, Compress::No)
+            .unwrap();
+        let mut old_nul_serial: Vec<u8> = Vec::new();
+        old_nul
+            .serialize_with_mode(&mut old_nul_serial, Compress::No)
+            .unwrap();
+        let mut cb_com_list_serial: Vec<u8> = Vec::new();
+        cb_com_list
+            .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
+            .unwrap();
+        self.0
+            .is_in(object_serial, old_nul_serial, cb_com_list_serial)
+    }
+
+    fn enforce_membership_of(
+        data_var: ComVar<F>,
+        extra_witness: Self::MembershipWitnessVar,
+        extra_pub: Self::MembershipPubVar,
+    ) -> Result<(), SynthesisError> {
+        Ok(()) // CHECK SIGNATURE
     }
 }
