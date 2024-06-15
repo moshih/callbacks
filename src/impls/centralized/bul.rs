@@ -1,4 +1,4 @@
-use crate::generic::bulletin::{PublicUserBul, UserBul};
+use crate::generic::bulletin::{JoinableBulletin, PublicUserBul, UserBul};
 use crate::generic::object::{Com, ComVar, Nul};
 use crate::generic::user::UserData;
 use crate::util::UnitVar;
@@ -10,11 +10,25 @@ use ark_serialize::Compress;
 use ark_snark::SNARK;
 
 pub trait DbHandle {
-    fn insert(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>, sig: Vec<u8>);
+    fn insert_updated_object(
+        &mut self,
+        object: Vec<u8>,
+        old_nul: Vec<u8>,
+        cb_com_list: Vec<u8>,
+        sig: Vec<u8>,
+    );
 
     fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
 
     fn has_never_recieved_nul(&self, nul: Vec<u8>) -> bool;
+
+    fn add_and_verify_new_object<F: PrimeField, Snark: SNARK<F>, D>(
+        &mut self,
+        object: Com<F>,
+        proof: Snark::Proof,
+        verif_key: Snark::VerifyingKey,
+        data: D,
+    ) -> Result<(), &'static str>;
 }
 
 pub struct CentralObjectStore<D: DbHandle>(pub D);
@@ -22,7 +36,7 @@ pub struct CentralObjectStore<D: DbHandle>(pub D);
 impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
     for CentralObjectStore<D>
 {
-    type Error = ();
+    type Error = &'static str;
 
     type MembershipWitness = (); // signature but the entirety of humanity.
 
@@ -100,7 +114,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
             .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
             .unwrap();
 
-        self.0.insert(
+        self.0.insert_updated_object(
             object_serial,
             old_nul_serial,
             cb_com_list_serial,
@@ -108,6 +122,20 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
         );
 
         Ok(())
+    }
+}
+
+impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
+    for CentralObjectStore<D>
+{
+    fn join_bul<Snark: SNARK<F>, PubData>(
+        &mut self,
+        object: Com<F>,
+        proof: Snark::Proof,
+        pub_data: (Snark::VerifyingKey, PubData),
+    ) -> Result<(), Self::Error> {
+        self.0
+            .add_and_verify_new_object::<F, Snark, PubData>(object, proof, pub_data.0, pub_data.1)
     }
 }
 
@@ -120,7 +148,7 @@ pub struct CentralNetBulStore<N: NetworkHandle>(pub N);
 impl<F: PrimeField + Absorb, U: UserData<F>, N: NetworkHandle> PublicUserBul<F, U>
     for CentralNetBulStore<N>
 {
-    type Error = ();
+    type Error = &'static str;
 
     type MembershipWitness = (); // signature but the entirety of humanity.
 
