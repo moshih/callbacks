@@ -183,10 +183,12 @@ pub trait CallbackBulletin<Args: Clone, F: PrimeField, Crypto: AECipherSigZK<F, 
 }
 
 pub trait JoinableBulletin<F: PrimeField + Absorb, U: UserData<F>>: UserBul<F, U> {
-    fn join_bul<Snark: SNARK<F>, PubData>(
+    type PubData;
+
+    fn join_bul<Snark: SNARK<F>>(
         &mut self,
         object: Com<F>,
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, PubData),
+        pub_data: (Snark::VerifyingKey, Self::PubData),
     ) -> Result<(), Self::Error>;
 }

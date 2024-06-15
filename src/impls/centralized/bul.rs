@@ -24,12 +24,14 @@ pub trait DbHandle {
 
     fn has_never_recieved_nul(&self, nul: Vec<u8>) -> bool;
 
-    fn add_and_verify_new_object<F: PrimeField, Snark: SNARK<F>, D>(
+    type ExternalVerifData;
+
+    fn add_and_verify_new_object<F: PrimeField, Snark: SNARK<F>>(
         &mut self,
         object: Com<F>,
         proof: Snark::Proof,
         verif_key: Snark::VerifyingKey,
-        data: D,
+        data: Self::ExternalVerifData,
     ) -> Result<(), Self::Error>;
 }
 
@@ -128,14 +130,16 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
 impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
     for CentralObjectStore<D>
 {
-    fn join_bul<Snark: SNARK<F>, PubData>(
+    type PubData = D::ExternalVerifData;
+
+    fn join_bul<Snark: SNARK<F>>(
         &mut self,
         object: Com<F>,
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, PubData),
+        pub_data: (Snark::VerifyingKey, Self::PubData),
     ) -> Result<(), Self::Error> {
         self.0
-            .add_and_verify_new_object::<F, Snark, PubData>(object, proof, pub_data.0, pub_data.1)
+            .add_and_verify_new_object::<F, Snark>(object, proof, pub_data.0, pub_data.1)
     }
 }
 
