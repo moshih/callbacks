@@ -21,18 +21,18 @@ use zk_object::zk_object;
 
 #[zk_object(F)]
 #[derive(Default)]
-struct TestUserData {
-    token1: F,
-    token2: F,
+pub struct TestUserData2 {
+    pub token1: F,
+    pub token2: F,
 }
 
-fn int_meth<'a>(tu: &'a User<F, TestUserData>, _args: F) -> User<F, TestUserData> {
+fn int_meth<'a>(tu: &'a User<F, TestUserData2>, _args: F) -> User<F, TestUserData2> {
     tu.clone()
 }
 
 fn int_meth_pred<'a>(
-    tu_old: &'a UserVar<F, TestUserData>,
-    tu_new: &'a UserVar<F, TestUserData>,
+    tu_old: &'a UserVar<F, TestUserData2>,
+    tu_new: &'a UserVar<F, TestUserData2>,
     _args: FpVar<F>,
 ) -> ArkResult<()> {
     tu_old
@@ -44,22 +44,22 @@ fn int_meth_pred<'a>(
 }
 
 fn some_pred<'a, 'b>(
-    _tu: &'a UserVar<F, TestUserData>,
+    _tu: &'a UserVar<F, TestUserData2>,
     _com: &'b FpVar<F>,
     _args: UnitVar,
 ) -> ArkResult<()> {
     Ok(())
 }
 
-fn cb_meth<'a>(tu: &'a User<F, TestUserData>, _args: F) -> User<F, TestUserData> {
+fn cb_meth<'a>(tu: &'a User<F, TestUserData2>, _args: F) -> User<F, TestUserData2> {
     let mut out = tu.clone();
     out.data.token1 = F::from(0); // revoke a token
     out
 }
 
 fn cb_pred<'a>(
-    tu_old: &'a UserVar<F, TestUserData>,
-    _tu_new: &'a UserVar<F, TestUserData>,
+    tu_old: &'a UserVar<F, TestUserData2>,
+    _tu_new: &'a UserVar<F, TestUserData2>,
     _args: FpVar<F>,
 ) -> ArkResult<()> {
     tu_old
@@ -70,7 +70,7 @@ fn cb_pred<'a>(
 }
 
 fn main() {
-    let cb: Callback<F, TestUserData, F, FpVar<F>> = Callback {
+    let cb: Callback<F, TestUserData2, F, FpVar<F>> = Callback {
         method_id: Id::from(0),
         expirable: false,
         expiration: Time::from(0),
@@ -78,7 +78,7 @@ fn main() {
         predicate: cb_pred,
     };
 
-    let interaction: Interaction<F, TestUserData, F, FpVar<F>, 1> = Interaction {
+    let interaction: Interaction<F, TestUserData2, F, FpVar<F>, 1> = Interaction {
         meth: (int_meth, int_meth_pred),
         callbacks: [cb.clone()],
     };
@@ -99,7 +99,7 @@ fn main() {
     let (pki, _vki) = generate_keys_for_statement_in::<
         F,
         Poseidon<2>,
-        TestUserData,
+        TestUserData2,
         (),
         UnitVar,
         Groth16<E>,
@@ -107,7 +107,7 @@ fn main() {
     >(some_pred, &mut rng);
 
     let mut u = User::create(
-        TestUserData {
+        TestUserData2 {
             token1: F::from(1),
             token2: F::from(3),
         },

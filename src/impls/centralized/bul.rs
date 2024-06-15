@@ -73,11 +73,14 @@ impl<F: PrimeField + Absorb, U: UserData<F>> UserBul<F, U> for CentralObjectStor
         !self.nuls.contains(nul)
     }
 
-    fn append_value<const NUMCBS: usize>(
+    fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,
         cb_com_list: [Com<F>; NUMCBS],
+        _args: Args,
+        _proof: Snark::Proof,
+        _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), Self::Error> {
         let new_co = COData {
             object,

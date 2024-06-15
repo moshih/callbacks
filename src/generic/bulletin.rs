@@ -42,11 +42,14 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
 pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool;
 
-    fn append_value<const NUMCBS: usize>(
+    fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,
         cb_com_list: [Com<F>; NUMCBS],
+        args: Args,
+        proof: Snark::Proof,
+        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), Self::Error>;
 
     fn verify_interaction<Args: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
@@ -73,7 +76,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     }
 
     fn verify_interact_and_append<
-        Args: ToConstraintField<F>,
+        Args: ToConstraintField<F> + Clone,
         Snark: SNARK<F>,
         const NUMCBS: usize,
     >(
@@ -88,18 +91,25 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         let out = self.verify_interaction::<Args, Snark, NUMCBS>(
             object,
             old_nul,
-            args,
+            args.clone(),
             cb_com_list,
-            proof,
-            pub_data,
+            proof.clone(),
+            pub_data.clone(),
         );
 
         if !out {
             return Err(BulError::VerifyError);
         }
 
-        self.append_value(object, old_nul, cb_com_list)
-            .map_err(BulError::AppendError)?;
+        self.append_value::<Args, Snark, NUMCBS>(
+            object,
+            old_nul,
+            cb_com_list,
+            args,
+            proof,
+            pub_data,
+        )
+        .map_err(BulError::AppendError)?;
 
         Ok(())
     }
