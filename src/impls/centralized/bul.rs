@@ -10,13 +10,15 @@ use ark_serialize::Compress;
 use ark_snark::SNARK;
 
 pub trait DbHandle {
+    type Error;
+
     fn insert_updated_object(
         &mut self,
         object: Vec<u8>,
         old_nul: Vec<u8>,
         cb_com_list: Vec<u8>,
         sig: Vec<u8>,
-    );
+    ) -> Result<(), Self::Error>;
 
     fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
 
@@ -28,7 +30,7 @@ pub trait DbHandle {
         proof: Snark::Proof,
         verif_key: Snark::VerifyingKey,
         data: D,
-    ) -> Result<(), &'static str>;
+    ) -> Result<(), Self::Error>;
 }
 
 pub struct CentralObjectStore<D: DbHandle>(pub D);
@@ -36,7 +38,7 @@ pub struct CentralObjectStore<D: DbHandle>(pub D);
 impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
     for CentralObjectStore<D>
 {
-    type Error = &'static str;
+    type Error = D::Error;
 
     type MembershipWitness = (); // signature but the entirety of humanity.
 
@@ -119,9 +121,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
             old_nul_serial,
             cb_com_list_serial,
             pub_data_serial,
-        );
-
-        Ok(())
+        )
     }
 }
 
@@ -140,6 +140,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
 }
 
 pub trait NetworkHandle {
+    type Error;
+
     fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
 }
 
@@ -148,7 +150,7 @@ pub struct CentralNetBulStore<N: NetworkHandle>(pub N);
 impl<F: PrimeField + Absorb, U: UserData<F>, N: NetworkHandle> PublicUserBul<F, U>
     for CentralNetBulStore<N>
 {
-    type Error = &'static str;
+    type Error = N::Error;
 
     type MembershipWitness = (); // signature but the entirety of humanity.
 
