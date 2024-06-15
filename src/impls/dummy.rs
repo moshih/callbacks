@@ -58,11 +58,10 @@ impl<F: PrimeField + Absorb, U: UserData<F>> UserBul<F, U> for DummyObjectStore 
 impl<F: PrimeField + Absorb, U: UserData<F>> JoinableBulletin<F, U> for DummyObjectStore {
     type PubData = ();
 
-    fn join_bul<Snark: ark_snark::SNARK<F>>(
+    fn join_bul(
         &mut self,
         _object: crate::generic::object::Com<F>,
-        _proof: Snark::Proof,
-        _pub_data: (Snark::VerifyingKey, ()),
+        _pub_data: (),
     ) -> Result<(), Self::Error> {
         Ok(())
     }

@@ -26,11 +26,9 @@ pub trait DbHandle {
 
     type ExternalVerifData;
 
-    fn add_and_verify_new_object<F: PrimeField, Snark: SNARK<F>>(
+    fn add_and_verify_new_object<F: PrimeField>(
         &mut self,
         object: Com<F>,
-        proof: Snark::Proof,
-        verif_key: Snark::VerifyingKey,
         data: Self::ExternalVerifData,
     ) -> Result<(), Self::Error>;
 }
@@ -132,14 +130,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
 {
     type PubData = D::ExternalVerifData;
 
-    fn join_bul<Snark: SNARK<F>>(
-        &mut self,
-        object: Com<F>,
-        proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::PubData),
-    ) -> Result<(), Self::Error> {
-        self.0
-            .add_and_verify_new_object::<F, Snark>(object, proof, pub_data.0, pub_data.1)
+    fn join_bul(&mut self, object: Com<F>, pub_data: Self::PubData) -> Result<(), Self::Error> {
+        self.0.add_and_verify_new_object::<F>(object, pub_data)
     }
 }
 
