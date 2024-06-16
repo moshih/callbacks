@@ -28,7 +28,7 @@ pub trait DbHandle {
     type ExternalVerifData;
 
     fn verify_new_object(
-        &mut self,
+        &self,
         object: &[u8],
         data: Self::ExternalVerifData,
     ) -> Result<(), Self::Error>;
