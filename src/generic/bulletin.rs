@@ -49,7 +49,8 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         cb_com_list: [Com<F>; NUMCBS],
         args: Args,
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+        pub_data: (Snark::VerifyingKey, Self::MembershipPub), // membership for the PREVIOUS object, meant to verify the proof:
+                                                              // NOT membership for the current object
     ) -> Result<(), Self::Error>;
 
     fn verify_interaction<Args: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(

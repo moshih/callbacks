@@ -4,6 +4,7 @@ use crate::generic::user::UserData;
 use crate::util::UnitVar;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
+use ark_r1cs_std::ToBytesGadget;
 use ark_relations::r1cs::SynthesisError;
 use ark_serialize::CanonicalSerialize;
 use ark_serialize::Compress;
@@ -26,9 +27,9 @@ pub trait DbHandle {
 
     type ExternalVerifData;
 
-    fn add_and_verify_new_object<F: PrimeField>(
+    fn add_and_verify_new_object(
         &mut self,
-        object: Com<F>,
+        object: Vec<u8>,
         data: Self::ExternalVerifData,
     ) -> Result<(), Self::Error>;
 }
@@ -78,6 +79,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
         extra_witness: Self::MembershipWitnessVar,
         extra_pub: Self::MembershipPubVar,
     ) -> Result<(), SynthesisError> {
+        let bytes_rep = data_var.to_bytes();
+
         Ok(()) // CHECK SIGNATURE
     }
 }
@@ -97,7 +100,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
         cb_com_list: [Com<F>; NUMCBS],
         _args: Args,
         _proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+        _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), Self::Error> {
         let mut object_serial: Vec<u8> = Vec::new();
         object
@@ -107,21 +110,16 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
         old_nul
             .serialize_with_mode(&mut old_nul_serial, Compress::No)
             .unwrap();
-        let mut pub_data_serial: Vec<u8> = Vec::new();
-        pub_data
-            .serialize_with_mode(&mut pub_data_serial, Compress::No)
-            .unwrap();
+
         let mut cb_com_list_serial: Vec<u8> = Vec::new();
         cb_com_list
             .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
             .unwrap();
 
-        self.0.insert_updated_object(
-            object_serial,
-            old_nul_serial,
-            cb_com_list_serial,
-            pub_data_serial,
-        )
+        // ADD SIGNING THE OBJECT HERE
+
+        self.0
+            .insert_updated_object(object_serial, old_nul_serial, cb_com_list_serial, todo!())
     }
 }
 
@@ -131,7 +129,11 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
     type PubData = D::ExternalVerifData;
 
     fn join_bul(&mut self, object: Com<F>, pub_data: Self::PubData) -> Result<(), Self::Error> {
-        self.0.add_and_verify_new_object::<F>(object, pub_data)
+        let mut object_serial: Vec<u8> = Vec::new();
+        object
+            .serialize_with_mode(&mut object_serial, Compress::No)
+            .unwrap();
+        self.0.add_and_verify_new_object(object_serial, pub_data)
     }
 }
 
