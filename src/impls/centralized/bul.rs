@@ -15,21 +15,21 @@ pub trait DbHandle {
 
     fn insert_updated_object(
         &mut self,
-        object: Vec<u8>,
-        old_nul: Vec<u8>,
-        cb_com_list: Vec<u8>,
-        sig: Vec<u8>,
+        object: &[u8],
+        old_nul: &[u8],
+        cb_com_list: &[u8],
+        sig: &[u8],
     ) -> Result<(), Self::Error>;
 
-    fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
+    fn is_in(&self, object: &[u8], old_nul: &[u8], cb_com_list: &[u8]) -> bool;
 
-    fn has_never_recieved_nul(&self, nul: Vec<u8>) -> bool;
+    fn has_never_recieved_nul(&self, nul: &[u8]) -> bool;
 
     type ExternalVerifData;
 
-    fn add_and_verify_new_object(
+    fn verify_new_object(
         &mut self,
-        object: Vec<u8>,
+        object: &[u8],
         data: Self::ExternalVerifData,
     ) -> Result<(), Self::Error>;
 }
@@ -58,20 +58,20 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
         _proof: Snark::Proof,
         _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> bool {
-        let mut object_serial: Vec<u8> = Vec::new();
+        let mut object_serial = Vec::new();
         object
             .serialize_with_mode(&mut object_serial, Compress::No)
             .unwrap();
-        let mut old_nul_serial: Vec<u8> = Vec::new();
+        let mut old_nul_serial = Vec::new();
         old_nul
             .serialize_with_mode(&mut old_nul_serial, Compress::No)
             .unwrap();
-        let mut cb_com_list_serial: Vec<u8> = Vec::new();
+        let mut cb_com_list_serial = Vec::new();
         cb_com_list
             .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
             .unwrap();
         self.0
-            .is_in(object_serial, old_nul_serial, cb_com_list_serial)
+            .is_in(&object_serial, &old_nul_serial, &cb_com_list_serial)
     }
 
     fn enforce_membership_of(
@@ -87,10 +87,10 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
 
 impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for CentralObjectStore<D> {
     fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool {
-        let mut nul_serial: Vec<u8> = Vec::new();
+        let mut nul_serial = Vec::new();
         nul.serialize_with_mode(&mut nul_serial, Compress::No)
             .unwrap();
-        self.0.has_never_recieved_nul(nul_serial)
+        self.0.has_never_recieved_nul(&nul_serial)
     }
 
     fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
@@ -102,24 +102,28 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
         _proof: Snark::Proof,
         _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), Self::Error> {
-        let mut object_serial: Vec<u8> = Vec::new();
+        let mut object_serial = Vec::new();
         object
             .serialize_with_mode(&mut object_serial, Compress::No)
             .unwrap();
-        let mut old_nul_serial: Vec<u8> = Vec::new();
+        let mut old_nul_serial = Vec::new();
         old_nul
             .serialize_with_mode(&mut old_nul_serial, Compress::No)
             .unwrap();
 
-        let mut cb_com_list_serial: Vec<u8> = Vec::new();
+        let mut cb_com_list_serial = Vec::new();
         cb_com_list
             .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
             .unwrap();
 
         // ADD SIGNING THE OBJECT HERE
 
-        self.0
-            .insert_updated_object(object_serial, old_nul_serial, cb_com_list_serial, todo!())
+        self.0.insert_updated_object(
+            &object_serial,
+            &old_nul_serial,
+            &cb_com_list_serial,
+            todo!(),
+        )
     }
 }
 
@@ -129,18 +133,23 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
     type PubData = D::ExternalVerifData;
 
     fn join_bul(&mut self, object: Com<F>, pub_data: Self::PubData) -> Result<(), Self::Error> {
-        let mut object_serial: Vec<u8> = Vec::new();
+        let mut object_serial = Vec::new();
         object
             .serialize_with_mode(&mut object_serial, Compress::No)
             .unwrap();
-        self.0.add_and_verify_new_object(object_serial, pub_data)
+        self.0.verify_new_object(&object_serial, pub_data)?;
+
+        // Sign object here
+
+        self.0
+            .insert_updated_object(&object_serial, &[], &[], todo!())
     }
 }
 
 pub trait NetworkHandle {
     type Error;
 
-    fn is_in(&self, object: Vec<u8>, old_nul: Vec<u8>, cb_com_list: Vec<u8>) -> bool;
+    fn is_in(&self, object: &[u8], old_nul: &[u8], cb_com_list: &[u8]) -> bool;
 }
 
 pub struct CentralNetBulStore<N: NetworkHandle>(pub N);
@@ -167,20 +176,20 @@ impl<F: PrimeField + Absorb, U: UserData<F>, N: NetworkHandle> PublicUserBul<F, 
         _proof: Snark::Proof,
         _pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> bool {
-        let mut object_serial: Vec<u8> = Vec::new();
+        let mut object_serial = Vec::new();
         object
             .serialize_with_mode(&mut object_serial, Compress::No)
             .unwrap();
-        let mut old_nul_serial: Vec<u8> = Vec::new();
+        let mut old_nul_serial = Vec::new();
         old_nul
             .serialize_with_mode(&mut old_nul_serial, Compress::No)
             .unwrap();
-        let mut cb_com_list_serial: Vec<u8> = Vec::new();
+        let mut cb_com_list_serial = Vec::new();
         cb_com_list
             .serialize_with_mode(&mut cb_com_list_serial, Compress::No)
             .unwrap();
         self.0
-            .is_in(object_serial, old_nul_serial, cb_com_list_serial)
+            .is_in(&object_serial, &old_nul_serial, &cb_com_list_serial)
     }
 
     fn enforce_membership_of(
