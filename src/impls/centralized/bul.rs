@@ -21,6 +21,12 @@ pub trait DbHandle {
         sig: &[u8],
     ) -> Result<(), Self::Error>;
 
+    async fn async_verify_new_object(
+        &self,
+        object: &[u8],
+        data: Self::ExternalVerifData,
+    ) -> Result<(), Self::Error>;
+
     fn insert_updated_object(
         &mut self,
         object: &[u8],
