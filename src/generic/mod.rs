@@ -1,4 +1,6 @@
 #[cfg(feature = "asynchr")]
+#[cfg(any(feature = "asynchr", doc))]
+#[doc(cfg(feature = "asynchr"))]
 pub mod asynchr;
 pub mod bulletin;
 pub mod callbacks;

@@ -21,3 +21,6 @@ rand = "0.8.5"
 ark-bn254 = "0.4.0"
 ark-serialize = { version = "0.4.2", features = ["ark-serialize-derive", "derive", "std"] }
 circom_poseidon = { path = "circom-poseidon" }
+
+[features]
+asynchr = []
