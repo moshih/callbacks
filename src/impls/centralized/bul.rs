@@ -1,14 +1,64 @@
+use crate::crypto::hash::HasherZK;
 use crate::generic::bulletin::{JoinableBulletin, PublicUserBul, UserBul};
 use crate::generic::object::{Com, ComVar, Nul};
 use crate::generic::user::UserData;
+use crate::impls::hash::Poseidon;
 use crate::util::UnitVar;
 use ark_crypto_primitives::sponge::Absorb;
+use ark_ec::AffineRepr;
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use ark_ff::UniformRand;
 use ark_r1cs_std::ToBytesGadget;
 use ark_relations::r1cs::SynthesisError;
 use ark_serialize::CanonicalSerialize;
 use ark_serialize::Compress;
 use ark_snark::SNARK;
+use rand::thread_rng;
+use std::ops::Mul;
+
+pub struct SchnorrPubKey<C: CurveGroup> {
+    pub point: C::Affine,
+}
+
+pub struct SchnorrPrivateKey<C: CurveGroup> {
+    pub pubkey: SchnorrPubKey<C>,
+    pub private_key: C::ScalarField,
+}
+
+pub struct SchnorrSignature<C: CurveGroup> {
+    pub salt: C::BaseField,
+    pub challenge: C::ScalarField,
+    pub response: C::ScalarField,
+}
+
+fn sign_to_field<C: CurveGroup>(
+    message: &[C::ScalarField],
+    key: SchnorrPrivateKey<C>,
+) -> SchnorrSignature<C>
+where
+    C::BaseField: PrimeField + Absorb,
+{
+    let mut rng = thread_rng();
+
+    let rand_scalar = C::ScalarField::rand(&mut rng);
+
+    let salt = C::BaseField::rand(&mut rng);
+
+    let commit = C::generator().mul(rand_scalar).into_affine();
+
+    let mut v = vec![
+        salt,
+        *key.pubkey.point.x().unwrap(),
+        *key.pubkey.point.y().unwrap(),
+        *commit.x().unwrap(),
+        *commit.y().unwrap(),
+    ];
+
+    let challenge = Poseidon::<2>::hash(&v);
+
+    todo!()
+}
 
 pub trait DbHandle {
     type Error;
@@ -118,12 +168,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
 
         // ADD SIGNING THE OBJECT HERE
 
-        self.0.insert_updated_object(
-            &object_serial,
-            &old_nul_serial,
-            &cb_com_list_serial,
-            todo!(),
-        )
+        self.0
+            .insert_updated_object(&object_serial, &old_nul_serial, &cb_com_list_serial, &[])
     }
 }
 
@@ -141,8 +187,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
 
         // Sign object here
 
-        self.0
-            .insert_updated_object(&object_serial, &[], &[], todo!())
+        self.0.insert_updated_object(&object_serial, &[], &[], &[])
     }
 }
 

@@ -1,4 +1,4 @@
-use ark_bn254::Fr as F;
+use ark_bls12_381::Fr as F;
 use zk_callbacks::generic::object::ZKFields;
 use zk_callbacks::generic::user::User;
 use zk_callbacks::generic::user::UserData;
@@ -48,5 +48,5 @@ fn main() {
     }
     println!();
 
-    println!("{}", out.commit::<CircPoseidon<2>>());
+    println!("{}", out.commit::<CircPoseidon<4>>());
 }
