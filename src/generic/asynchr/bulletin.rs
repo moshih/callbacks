@@ -22,7 +22,7 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
     type MembershipPub: Clone + Default + ToConstraintField<F>;
     type MembershipPubVar: AllocVar<Self::MembershipPub, F> + Clone;
 
-    fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+    async fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
@@ -40,9 +40,9 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
 }
 
 pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
-    fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool;
+    async fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool;
 
-    fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+    async fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,
@@ -53,7 +53,11 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
                                                               // NOT membership for the current object
     ) -> Result<(), Self::Error>;
 
-    fn verify_interaction<Args: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
+    async fn verify_interaction<
+        Args: ToConstraintField<F>,
+        Snark: SNARK<F>,
+        const NUMCBS: usize,
+    >(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
@@ -64,7 +68,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     ) -> bool {
         let circuit_key = pub_data.0;
         let public_membership_input = pub_data.1;
-        if !self.has_never_recieved_nul(&old_nul) {
+        if !self.has_never_recieved_nul(&old_nul).await {
             return false;
         }
 
@@ -76,7 +80,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         Snark::verify(&circuit_key, &pub_inputs, &proof).unwrap_or(false)
     }
 
-    fn verify_interact_and_append<
+    async fn verify_interact_and_append<
         Args: ToConstraintField<F> + Clone,
         Snark: SNARK<F>,
         const NUMCBS: usize,
@@ -89,14 +93,16 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         proof: Snark::Proof,
         pub_data: (Snark::VerifyingKey, Self::MembershipPub),
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.verify_interaction::<Args, Snark, NUMCBS>(
-            object,
-            old_nul,
-            args.clone(),
-            cb_com_list,
-            proof.clone(),
-            pub_data.clone(),
-        );
+        let out = self
+            .verify_interaction::<Args, Snark, NUMCBS>(
+                object,
+                old_nul,
+                args.clone(),
+                cb_com_list,
+                proof.clone(),
+                pub_data.clone(),
+            )
+            .await;
 
         if !out {
             return Err(BulError::VerifyError);
@@ -110,6 +116,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
             proof,
             pub_data,
         )
+        .await
         .map_err(BulError::AppendError)?;
 
         Ok(())
@@ -129,7 +136,7 @@ pub trait PublicCallbackBul<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F,
     type NonMembershipPub;
     type NonMembershipPubVar: AllocVar<Self::NonMembershipPub, F>;
 
-    fn verify_in(&self, tik: Crypto::SigPK, enc_args: Crypto::Ct) -> bool;
+    async fn verify_in(&self, tik: Crypto::SigPK, enc_args: Crypto::Ct) -> bool;
 
     fn enforce_membership_of(
         tikvar: Crypto::SigPKV,
@@ -147,36 +154,42 @@ pub trait PublicCallbackBul<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F,
 pub trait CallbackBulletin<Args: Clone, F: PrimeField, Crypto: AECipherSigZK<F, Args>>:
     PublicCallbackBul<F, Args, Crypto>
 {
-    fn has_never_recieved_tik(&self, tik: &Crypto::SigPK) -> bool;
+    async fn has_never_recieved_tik(&self, tik: &Crypto::SigPK) -> bool;
 
-    fn append_value(&mut self, tik: Crypto::SigPK, enc_args: Crypto::Ct)
-        -> Result<(), Self::Error>;
+    async fn append_value(
+        &mut self,
+        tik: Crypto::SigPK,
+        enc_args: Crypto::Ct,
+    ) -> Result<(), Self::Error>;
 
-    fn verify_call(
+    async fn verify_call(
         &self,
         tik: Crypto::SigPK,
         enc_args: Crypto::Ct,
         signature: Crypto::Sig,
     ) -> bool {
-        if !self.has_never_recieved_tik(&tik) {
+        if !self.has_never_recieved_tik(&tik).await {
             return false;
         }
         tik.verify(enc_args.clone(), signature)
     }
 
-    fn verify_call_and_append(
+    async fn verify_call_and_append(
         &mut self,
         tik: Crypto::SigPK,
         enc_args: Crypto::Ct,
         signature: Crypto::Sig,
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.verify_call(tik.clone(), enc_args.clone(), signature);
+        let out = self
+            .verify_call(tik.clone(), enc_args.clone(), signature)
+            .await;
 
         if !out {
             return Err(BulError::VerifyError);
         }
 
         self.append_value(tik, enc_args)
+            .await
             .map_err(BulError::AppendError)?;
 
         Ok(())
@@ -186,5 +199,9 @@ pub trait CallbackBulletin<Args: Clone, F: PrimeField, Crypto: AECipherSigZK<F, 
 pub trait JoinableBulletin<F: PrimeField + Absorb, U: UserData<F>>: UserBul<F, U> {
     type PubData;
 
-    fn join_bul(&mut self, object: Com<F>, pub_data: Self::PubData) -> Result<(), Self::Error>;
+    async fn join_bul(
+        &mut self,
+        object: Com<F>,
+        pub_data: Self::PubData,
+    ) -> Result<(), Self::Error>;
 }

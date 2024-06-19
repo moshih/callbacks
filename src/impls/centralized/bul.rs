@@ -1,4 +1,5 @@
-use crate::generic::bulletin::{JoinableBulletin, PublicUserBul, UserBul};
+use crate::generic::asynchr::bulletin::{JoinableBulletin, PublicUserBul, UserBul};
+use crate::generic::bulletin;
 use crate::generic::object::{Com, ComVar, Nul};
 use crate::generic::user::UserData;
 use crate::util::UnitVar;
@@ -13,7 +14,7 @@ use ark_snark::SNARK;
 pub trait DbHandle {
     type Error;
 
-    async fn async_insert_updated_object(
+    async fn insert_updated_object(
         &mut self,
         object: &[u8],
         old_nul: &[u8],
@@ -21,27 +22,13 @@ pub trait DbHandle {
         sig: &[u8],
     ) -> Result<(), Self::Error>;
 
-    async fn async_verify_new_object(
-        &self,
-        object: &[u8],
-        data: Self::ExternalVerifData,
-    ) -> Result<(), Self::Error>;
+    async fn is_in(&self, object: &[u8], old_nul: &[u8], cb_com_list: &[u8]) -> bool;
 
-    fn insert_updated_object(
-        &mut self,
-        object: &[u8],
-        old_nul: &[u8],
-        cb_com_list: &[u8],
-        sig: &[u8],
-    ) -> Result<(), Self::Error>;
-
-    fn is_in(&self, object: &[u8], old_nul: &[u8], cb_com_list: &[u8]) -> bool;
-
-    fn has_never_recieved_nul(&self, nul: &[u8]) -> bool;
+    async fn has_never_recieved_nul(&self, nul: &[u8]) -> bool;
 
     type ExternalVerifData;
 
-    fn verify_new_object(
+    async fn verify_new_object(
         &self,
         object: &[u8],
         data: Self::ExternalVerifData,
@@ -63,7 +50,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
 
     type MembershipPubVar = UnitVar;
 
-    fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+    async fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
@@ -86,6 +73,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
             .unwrap();
         self.0
             .is_in(&object_serial, &old_nul_serial, &cb_com_list_serial)
+            .await
     }
 
     fn enforce_membership_of(
@@ -100,14 +88,14 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for CentralObjectStore<D> {
-    fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool {
+    async fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool {
         let mut nul_serial = Vec::new();
         nul.serialize_with_mode(&mut nul_serial, Compress::No)
             .unwrap();
-        self.0.has_never_recieved_nul(&nul_serial)
+        self.0.has_never_recieved_nul(&nul_serial).await
     }
 
-    fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+    async fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,
@@ -134,6 +122,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
 
         self.0
             .insert_updated_object(&object_serial, &old_nul_serial, &cb_com_list_serial, &[])
+            .await
     }
 }
 
@@ -142,16 +131,22 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> JoinableBulletin<F, U>
 {
     type PubData = D::ExternalVerifData;
 
-    fn join_bul(&mut self, object: Com<F>, pub_data: Self::PubData) -> Result<(), Self::Error> {
+    async fn join_bul(
+        &mut self,
+        object: Com<F>,
+        pub_data: Self::PubData,
+    ) -> Result<(), Self::Error> {
         let mut object_serial = Vec::new();
         object
             .serialize_with_mode(&mut object_serial, Compress::No)
             .unwrap();
-        self.0.verify_new_object(&object_serial, pub_data)?;
+        self.0.verify_new_object(&object_serial, pub_data).await?;
 
         // Sign object here
 
-        self.0.insert_updated_object(&object_serial, &[], &[], &[])
+        self.0
+            .insert_updated_object(&object_serial, &[], &[], &[])
+            .await
     }
 }
 
@@ -163,7 +158,7 @@ pub trait NetworkHandle {
 
 pub struct CentralNetBulStore<N: NetworkHandle>(pub N);
 
-impl<F: PrimeField + Absorb, U: UserData<F>, N: NetworkHandle> PublicUserBul<F, U>
+impl<F: PrimeField + Absorb, U: UserData<F>, N: NetworkHandle> bulletin::PublicUserBul<F, U>
     for CentralNetBulStore<N>
 {
     type Error = N::Error;
