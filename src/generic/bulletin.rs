@@ -188,3 +188,13 @@ pub trait JoinableBulletin<F: PrimeField + Absorb, U: UserData<F>>: UserBul<F, U
 
     fn join_bul(&mut self, object: Com<F>, pub_data: Self::PubData) -> Result<(), Self::Error>;
 }
+
+pub trait AsyncJoinableBulletin<F: PrimeField + Absorb, U: UserData<F>>: UserBul<F, U> {
+    type PubData;
+
+    async fn join_bul(
+        &mut self,
+        object: Com<F>,
+        pub_data: Self::PubData,
+    ) -> Result<(), Self::Error>;
+}
