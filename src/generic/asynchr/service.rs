@@ -1,8 +1,8 @@
 use crate::crypto::enc::AECipherSigZK;
 use crate::crypto::rr::RRSigner;
-use crate::generic::bulletin::BulError;
-use crate::generic::bulletin::PublicCallbackBul;
-use crate::generic::bulletin::PublicUserBul;
+use crate::generic::asynchr::bulletin::BulError;
+use crate::generic::asynchr::bulletin::PublicCallbackBul;
+use crate::generic::asynchr::bulletin::PublicUserBul;
 use crate::generic::callbacks::CallbackCom;
 use crate::generic::user::ExecutedMethod;
 use crate::generic::user::UserData;
@@ -72,14 +72,16 @@ pub trait ServiceProvider {
         bul: Bul,
         pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
     ) -> bool {
-        let out = bul.verify_in::<Args, Snark, NUMCBS>(
-            interaction_request.new_object,
-            interaction_request.old_nullifier,
-            interaction_request.cb_com_list,
-            args.clone(),
-            interaction_request.proof.clone(),
-            pub_data.clone(),
-        );
+        let out = bul
+            .verify_in::<Args, Snark, NUMCBS>(
+                interaction_request.new_object,
+                interaction_request.old_nullifier,
+                interaction_request.cb_com_list,
+                args.clone(),
+                interaction_request.proof.clone(),
+                pub_data.clone(),
+            )
+            .await;
         if !out {
             return false;
         }
