@@ -65,7 +65,7 @@ pub trait ServiceProvider {
         interaction_request: &ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
         args: Args,
-        bul: Bul,
+        bul: &Bul,
         pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
     ) -> bool {
         let out = bul.verify_in::<Args, Snark, NUMCBS>(
@@ -119,7 +119,7 @@ pub trait ServiceProvider {
         interaction_request: ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
         args: Args,
-        bul: Bul,
+        bul: &Bul,
         pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
     ) -> Result<(), BulError<Self::Error>> {
         let out = self.approve_interaction(&interaction_request, sk, args, bul, pub_data);

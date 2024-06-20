@@ -113,7 +113,7 @@ where
         ArgsVar: AllocVar<Args, F> + Clone,
         Crypto: AECipherSigZK<F, Args>,
         Snark: SNARK<F, Error = SynthesisError>,
-        Bul: PublicUserBul<F, U> + Clone,
+        Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
         &mut self,
@@ -251,7 +251,7 @@ where
         Args: Clone,
         ArgsVar: AllocVar<Args, F> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
-        Bul: PublicUserBul<F, U> + Clone,
+        Bul: PublicUserBul<F, U>,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),

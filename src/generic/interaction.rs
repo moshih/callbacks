@@ -67,7 +67,7 @@ where
         H: FieldHash<F>,
         Snark: SNARK<F>,
         Crypto: AECipherSigZK<F, Args>,
-        Bul: PublicUserBul<F, U> + Clone,
+        Bul: PublicUserBul<F, U>,
     >(
         &self,
         rng: &mut (impl CryptoRng + RngCore),
@@ -97,7 +97,6 @@ where
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct ExecMethodCircuit<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
@@ -105,7 +104,7 @@ pub(crate) struct ExecMethodCircuit<
     Args: Clone,
     ArgsVar: AllocVar<Args, F>,
     Crypto: AECipherSigZK<F, Args>,
-    Bul: PublicUserBul<F, U> + Clone,
+    Bul: PublicUserBul<F, U>,
     const NUMCBS: usize,
 > {
     // Private Inputs
@@ -132,7 +131,7 @@ impl<
         Args: Clone + std::fmt::Debug,
         ArgsVar: AllocVar<Args, F>,
         Crypto: AECipherSigZK<F, Args>,
-        Bul: PublicUserBul<F, U> + Clone,
+        Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     > ConstraintSynthesizer<F> for ExecMethodCircuit<F, H, U, Args, ArgsVar, Crypto, Bul, NUMCBS>
 {
@@ -220,6 +219,36 @@ impl<
     }
 }
 
+impl<
+        F: PrimeField + Absorb,
+        H: FieldHash<F>,
+        U: UserData<F>,
+        Args: Clone,
+        ArgsVar: AllocVar<Args, F> + Clone,
+        Crypto: AECipherSigZK<F, Args>,
+        Bul: PublicUserBul<F, U>,
+        const NUMCBS: usize,
+    > Clone for ExecMethodCircuit<F, H, U, Args, ArgsVar, Crypto, Bul, NUMCBS>
+{
+    fn clone(&self) -> Self {
+        Self {
+            priv_old_user: self.priv_old_user.clone(),
+            priv_new_user: self.priv_new_user.clone(),
+            priv_issued_callbacks: self.priv_issued_callbacks.clone(),
+            priv_bul_membership_witness: self.priv_bul_membership_witness.clone(),
+
+            pub_new_com: self.pub_new_com.clone(),
+            pub_old_nul: self.pub_old_nul.clone(),
+            pub_issued_callback_coms: self.pub_issued_callback_coms.clone(),
+            pub_args: self.pub_args.clone(),
+            pub_bul_membership_data: self.pub_bul_membership_data.clone(),
+
+            associated_method: self.associated_method.clone(),
+            _phantom_hash: self._phantom_hash.clone(),
+        }
+    }
+}
+
 pub fn generate_keys_for_statement<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
@@ -303,7 +332,6 @@ where
     Snark::circuit_specific_setup(out, rng).unwrap()
 }
 
-#[derive(Clone)]
 pub(crate) struct ProvePredInCircuit<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
@@ -322,6 +350,27 @@ pub(crate) struct ProvePredInCircuit<
     pub associated_method: SingularPredicate<UserVar<F, U>, ComVar<F>, ArgsVar>,
 
     pub _phantom_hash: PhantomData<H>,
+}
+
+impl<
+        F: PrimeField + Absorb,
+        H: FieldHash<F>,
+        U: UserData<F>,
+        Args: Clone,
+        ArgsVar: AllocVar<Args, F>,
+        Bul: PublicUserBul<F, U>,
+    > Clone for ProvePredInCircuit<F, H, U, Args, ArgsVar, Bul>
+{
+    fn clone(&self) -> Self {
+        Self {
+            priv_user: self.priv_user.clone(),
+            priv_extra_membership_data: self.priv_extra_membership_data.clone(),
+            pub_args: self.pub_args.clone(),
+            pub_extra_membership_data: self.pub_extra_membership_data.clone(),
+            associated_method: self.associated_method.clone(),
+            _phantom_hash: self._phantom_hash.clone(),
+        }
+    }
 }
 
 impl<
