@@ -9,6 +9,7 @@ use ark_r1cs_std::prelude::AllocVar;
 use ark_relations::r1cs::SynthesisError;
 use ark_snark::SNARK;
 
+#[derive(Debug, Clone)]
 pub enum BulError<E> {
     VerifyError,
     AppendError(E),
@@ -22,6 +23,8 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
     type MembershipPub: Clone + Default + ToConstraintField<F>;
     type MembershipPubVar: AllocVar<Self::MembershipPub, F> + Clone;
 
+    #[allow(async_fn_in_trait)]
+    #[allow(clippy::too_many_arguments)]
     async fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
@@ -29,7 +32,8 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
         cb_com_list: [Com<F>; NUMCBS],
         args: Args,
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+        memb_data: Self::MembershipPub,
+        verif_key: &Snark::VerifyingKey,
     ) -> bool;
 
     fn enforce_membership_of(
@@ -40,8 +44,11 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
 }
 
 pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
+    #[allow(async_fn_in_trait)]
     async fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool;
 
+    #[allow(async_fn_in_trait)]
+    #[allow(clippy::too_many_arguments)]
     async fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
@@ -49,10 +56,12 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         cb_com_list: [Com<F>; NUMCBS],
         args: Args,
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::MembershipPub), // membership for the PREVIOUS object, meant to verify the proof:
-                                                              // NOT membership for the current object
+        memb_data: Self::MembershipPub, // membership for the PREVIOUS object, meant to verify the proof: NOT membership for current object
+        verif_key: &Snark::VerifyingKey,
     ) -> Result<(), Self::Error>;
 
+    #[allow(async_fn_in_trait)]
+    #[allow(clippy::too_many_arguments)]
     async fn verify_interaction<
         Args: ToConstraintField<F>,
         Snark: SNARK<F>,
@@ -64,10 +73,9 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         args: Args,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+        memb_data: Self::MembershipPub,
+        verif_key: &Snark::VerifyingKey,
     ) -> bool {
-        let circuit_key = pub_data.0;
-        let public_membership_input = pub_data.1;
         if !self.has_never_recieved_nul(&old_nul).await {
             return false;
         }
@@ -75,11 +83,13 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         let mut pub_inputs = vec![object, old_nul];
         pub_inputs.extend::<Vec<F>>(args.to_field_elements().unwrap());
         pub_inputs.extend::<Vec<F>>(cb_com_list.to_field_elements().unwrap());
-        pub_inputs.extend::<Vec<F>>(public_membership_input.to_field_elements().unwrap());
+        pub_inputs.extend::<Vec<F>>(memb_data.to_field_elements().unwrap());
 
-        Snark::verify(&circuit_key, &pub_inputs, &proof).unwrap_or(false)
+        Snark::verify(verif_key, &pub_inputs, &proof).unwrap_or(false)
     }
 
+    #[allow(async_fn_in_trait)]
+    #[allow(clippy::too_many_arguments)]
     async fn verify_interact_and_append<
         Args: ToConstraintField<F> + Clone,
         Snark: SNARK<F>,
@@ -91,7 +101,8 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         args: Args,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
-        pub_data: (Snark::VerifyingKey, Self::MembershipPub),
+        memb_data: Self::MembershipPub,
+        verif_key: &Snark::VerifyingKey,
     ) -> Result<(), BulError<Self::Error>> {
         let out = self
             .verify_interaction::<Args, Snark, NUMCBS>(
@@ -100,7 +111,8 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
                 args.clone(),
                 cb_com_list,
                 proof.clone(),
-                pub_data.clone(),
+                memb_data.clone(),
+                verif_key,
             )
             .await;
 
@@ -114,7 +126,8 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
             cb_com_list,
             args,
             proof,
-            pub_data,
+            memb_data,
+            verif_key,
         )
         .await
         .map_err(BulError::AppendError)?;
@@ -136,6 +149,7 @@ pub trait PublicCallbackBul<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F,
     type NonMembershipPub;
     type NonMembershipPubVar: AllocVar<Self::NonMembershipPub, F>;
 
+    #[allow(async_fn_in_trait)]
     async fn verify_in(&self, tik: Crypto::SigPK, enc_args: Crypto::Ct) -> bool;
 
     fn enforce_membership_of(
@@ -151,17 +165,20 @@ pub trait PublicCallbackBul<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F,
     ) -> Result<(), SynthesisError>;
 }
 
-pub trait CallbackBulletin<Args: Clone, F: PrimeField, Crypto: AECipherSigZK<F, Args>>:
+pub trait CallbackBulletin<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F, Args>>:
     PublicCallbackBul<F, Args, Crypto>
 {
+    #[allow(async_fn_in_trait)]
     async fn has_never_recieved_tik(&self, tik: &Crypto::SigPK) -> bool;
 
+    #[allow(async_fn_in_trait)]
     async fn append_value(
         &mut self,
         tik: Crypto::SigPK,
         enc_args: Crypto::Ct,
     ) -> Result<(), Self::Error>;
 
+    #[allow(async_fn_in_trait)]
     async fn verify_call(
         &self,
         tik: Crypto::SigPK,
@@ -174,6 +191,7 @@ pub trait CallbackBulletin<Args: Clone, F: PrimeField, Crypto: AECipherSigZK<F, 
         tik.verify(enc_args.clone(), signature)
     }
 
+    #[allow(async_fn_in_trait)]
     async fn verify_call_and_append(
         &mut self,
         tik: Crypto::SigPK,
@@ -199,6 +217,7 @@ pub trait CallbackBulletin<Args: Clone, F: PrimeField, Crypto: AECipherSigZK<F, 
 pub trait JoinableBulletin<F: PrimeField + Absorb, U: UserData<F>>: UserBul<F, U> {
     type PubData;
 
+    #[allow(async_fn_in_trait)]
     async fn join_bul(
         &mut self,
         object: Com<F>,

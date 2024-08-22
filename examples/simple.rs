@@ -3,17 +3,16 @@ use ark_groth16::Groth16;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::Result as ArkResult;
-use ark_relations::r1cs::ToConstraintField;
-use ark_snark::SNARK;
 use rand::thread_rng;
 use zk_callbacks::generic::interaction::generate_keys_for_statement_in;
 use zk_callbacks::generic::interaction::Callback;
 use zk_callbacks::generic::interaction::Interaction;
 use zk_callbacks::generic::object::Id;
 use zk_callbacks::generic::object::Time;
+use zk_callbacks::generic::service::ServiceProvider;
 use zk_callbacks::generic::user::{User, UserVar};
 use zk_callbacks::impls::centralized::crypto::PlainTikCrypto;
-use zk_callbacks::impls::dummy::DummyObjectStore;
+use zk_callbacks::impls::dummy::DummyStore;
 use zk_callbacks::impls::hash::Poseidon;
 use zk_callbacks::util::UnitVar;
 use zk_object::zk_object;
@@ -84,10 +83,10 @@ fn main() {
 
     let mut rng = thread_rng();
 
-    let _co_store = DummyObjectStore;
+    let co_store = DummyStore;
 
     let (pk, vk) = interaction
-        .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, DummyObjectStore>(&mut rng);
+        .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, DummyStore>(&mut rng);
 
     let (pki, _vki) = generate_keys_for_statement_in::<
         F,
@@ -96,7 +95,7 @@ fn main() {
         (),
         UnitVar,
         Groth16<E>,
-        DummyObjectStore,
+        DummyStore,
     >(some_pred, &mut rng);
 
     let mut u = User::create(
@@ -107,7 +106,7 @@ fn main() {
         &mut rng,
     );
 
-    u.prove_statement_and_in::<Poseidon<2>, (), UnitVar, Groth16<E>, DummyObjectStore>(
+    u.prove_statement_and_in::<Poseidon<2>, (), UnitVar, Groth16<E>, DummyStore>(
         &mut rng,
         some_pred,
         &pki,
@@ -116,8 +115,10 @@ fn main() {
     )
     .unwrap();
 
+    println!("{:?}", u);
+
     let exec_method = u
-        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, DummyObjectStore, 1>(
+        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, DummyStore, 1>(
             &mut rng,
             interaction.clone(),
             [PlainTikCrypto(F::from(0))],
@@ -126,9 +127,23 @@ fn main() {
             F::from(0),
         )
         .unwrap();
+
+    println!("{:?}", u);
+
+    let res = co_store.approve_interaction_and_store::<F, TestUserData2, Groth16<E>, F, PlainTikCrypto<F>, DummyStore, 1>(
+        exec_method,
+        PlainTikCrypto(F::from(0)),
+        F::from(0),
+        &co_store,
+        (),
+        &vk,
+        (),
+    );
+
+    println!("{:?}", res);
 
     let exec_method2 = u
-        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, DummyObjectStore, 1>(
+        .interact::<Poseidon<2>, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, DummyStore, 1>(
             &mut rng,
             interaction.clone(),
             [PlainTikCrypto(F::from(0))],
@@ -138,26 +153,17 @@ fn main() {
         )
         .unwrap();
 
-    let mut pub_inputs = vec![exec_method.new_object, exec_method.old_nullifier];
-    pub_inputs.extend::<Vec<F>>(F::from(0).to_field_elements().unwrap());
-    pub_inputs.extend::<Vec<F>>(exec_method.cb_com_list.to_field_elements().unwrap());
-
-    println!(
-        "{:?}",
-        Groth16::<E>::verify(&vk, &pub_inputs, &exec_method.proof).unwrap()
-    );
-
     println!("{:?}", u);
 
-    let mut pub_inputs = vec![exec_method2.new_object, exec_method2.old_nullifier];
-    pub_inputs.extend::<Vec<F>>(F::from(0).to_field_elements().unwrap());
-    pub_inputs.extend::<Vec<F>>(exec_method2.cb_com_list.to_field_elements().unwrap());
-    pub_inputs.extend::<Vec<F>>(().to_field_elements().unwrap());
-
-    println!(
-        "{:?}",
-        Groth16::<E>::verify(&vk, &pub_inputs, &exec_method2.proof).unwrap()
+    let res = co_store.approve_interaction_and_store::<F, TestUserData2, Groth16<E>, F, PlainTikCrypto<F>, DummyStore, 1>(
+        exec_method2,
+        PlainTikCrypto(F::from(0)),
+        F::from(0),
+        &co_store,
+        (),
+        &vk,
+        (),
     );
 
-    println!("{:?}", u);
+    println!("{:?}", res);
 }

@@ -48,5 +48,5 @@ fn main() {
     }
     println!();
 
-    println!("{}", out.commit::<CircPoseidon<4>>());
+    println!("{}", out.commit::<CircPoseidon<2>>());
 }

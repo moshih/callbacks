@@ -20,6 +20,8 @@ type Called<F, A, Crypto> = (
 pub trait ServiceProvider {
     type Error;
 
+    type InteractionData;
+
     fn call<
         F: PrimeField + Absorb,
         A: Clone,
@@ -50,6 +52,7 @@ pub trait ServiceProvider {
     >(
         &self,
         interaction: ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        data: Self::InteractionData,
     ) -> Result<(), Self::Error>;
 
     fn approve_interaction<
@@ -66,7 +69,8 @@ pub trait ServiceProvider {
         sk: Crypto::SigSK,
         args: Args,
         bul: &Bul,
-        pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
+        memb_data: Bul::MembershipPub,
+        verif_key: &Snark::VerifyingKey,
     ) -> bool {
         let out = bul.verify_in::<Args, Snark, NUMCBS>(
             interaction_request.new_object,
@@ -74,7 +78,8 @@ pub trait ServiceProvider {
             interaction_request.cb_com_list,
             args.clone(),
             interaction_request.proof.clone(),
-            pub_data.clone(),
+            memb_data.clone(),
+            verif_key,
         );
         if !out {
             return false;
@@ -93,17 +98,14 @@ pub trait ServiceProvider {
             }
         }
 
-        let circuit_key = pub_data.0;
-        let public_membership_input = pub_data.1;
-
         let mut pub_inputs = vec![
             interaction_request.new_object,
             interaction_request.old_nullifier,
         ];
         pub_inputs.extend::<Vec<F>>(args.to_field_elements().unwrap());
         pub_inputs.extend::<Vec<F>>(interaction_request.cb_com_list.to_field_elements().unwrap());
-        pub_inputs.extend(public_membership_input.to_field_elements().unwrap());
-        Snark::verify(&circuit_key, &pub_inputs, &interaction_request.proof).unwrap_or(false)
+        pub_inputs.extend(memb_data.to_field_elements().unwrap());
+        Snark::verify(verif_key, &pub_inputs, &interaction_request.proof).unwrap_or(false)
     }
 
     fn approve_interaction_and_store<
@@ -120,15 +122,18 @@ pub trait ServiceProvider {
         sk: Crypto::SigSK,
         args: Args,
         bul: &Bul,
-        pub_data: (Snark::VerifyingKey, Bul::MembershipPub),
+        memb_data: Bul::MembershipPub,
+        verif_key: &Snark::VerifyingKey,
+        data: Self::InteractionData,
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.approve_interaction(&interaction_request, sk, args, bul, pub_data);
+        let out =
+            self.approve_interaction(&interaction_request, sk, args, bul, memb_data, verif_key);
 
         if !out {
             return Err(BulError::VerifyError);
         }
 
-        self.store_interaction::<F, U, Snark, Args, Crypto, NUMCBS>(interaction_request)
+        self.store_interaction::<F, U, Snark, Args, Crypto, NUMCBS>(interaction_request, data)
             .map_err(BulError::AppendError)
     }
 }

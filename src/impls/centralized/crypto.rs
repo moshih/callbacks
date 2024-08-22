@@ -51,7 +51,7 @@ impl<F: PrimeField> AllocVar<PlainTikCrypto<F>, F> for PlainTikCryptoVar<F> {
     }
 }
 
-impl<F: PrimeField, A> RRVerifier<(), A, ()> for PlainTikCrypto<F>
+impl<F: PrimeField, A> RRVerifier<(), A, F> for PlainTikCrypto<F>
 where
     Standard: Distribution<F>,
 {
@@ -59,9 +59,9 @@ where
         true
     }
 
-    fn rerand(&self, rng: &mut (impl CryptoRng + RngCore)) -> ((), Self) {
+    fn rerand(&self, rng: &mut (impl CryptoRng + RngCore)) -> (F, Self) {
         let out = rng.gen();
-        ((), PlainTikCrypto(out))
+        (out, PlainTikCrypto(out))
     }
 }
 
@@ -98,7 +98,7 @@ where
     }
 }
 
-impl<F: PrimeField, A> RRSigner<(), A, (), PlainTikCrypto<F>> for PlainTikCrypto<F>
+impl<F: PrimeField, A> RRSigner<(), A, F, PlainTikCrypto<F>> for PlainTikCrypto<F>
 where
     Standard: Distribution<F>,
 {
@@ -107,13 +107,13 @@ where
     }
 
     fn sk_to_pk(&self) -> PlainTikCrypto<F> {
-        PlainTikCrypto(F::zero())
+        self.clone()
     }
 
     fn sign_message(&self, _mes: &A) {}
 
-    fn rerand(&self, _rand: ()) -> Self {
-        PlainTikCrypto(F::zero())
+    fn rerand(&self, rand: F) -> Self {
+        PlainTikCrypto(rand)
     }
 }
 
@@ -133,5 +133,5 @@ where
 
     type EncKeyVar = PlainTikCryptoVar<F>;
 
-    type Rand = ();
+    type Rand = F;
 }

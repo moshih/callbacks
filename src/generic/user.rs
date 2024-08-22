@@ -15,7 +15,7 @@ use ark_r1cs_std::alloc::AllocationMode;
 use ark_relations::ns;
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
 use rand::distributions::Standard;
 use rand::prelude::Distribution;
@@ -69,6 +69,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>> AllocVar<User<F, U>, F> for UserVar
     }
 }
 
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ExecutedMethod<
     F: PrimeField + Absorb,
     Snark: SNARK<F>,
@@ -83,6 +84,7 @@ pub struct ExecutedMethod<
     pub proof: Snark::Proof,
 }
 
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ProveResult<F: PrimeField + Absorb, S: SNARK<F>> {
     pub object: Com<F>,
     pub proof: S::Proof,
