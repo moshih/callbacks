@@ -23,7 +23,7 @@ use rand::Rng;
 use rand::{CryptoRng, RngCore};
 use std::borrow::Borrow;
 
-#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct CallbackTicket<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
     pub tik: Crypto::SigPK,
     pub cb_method_id: Id<F>,
@@ -111,7 +111,7 @@ impl<Args: Clone, Crypto: AECipherSigZK<F, Args>, F: PrimeField + Absorb>
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct CallbackCom<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
     pub cb_entry: CallbackTicket<F, Args, Crypto>,
     pub com_rand: ComRand<F>,
@@ -179,13 +179,27 @@ type CBList<F, Crypto, Args, const NUMCBS: usize> = [(
 pub(crate) fn create_defaults<
     F: PrimeField + Absorb,
     U: UserData<F>,
-    Args: Clone + std::fmt::Debug,
-    ArgsVar: AllocVar<Args, F>,
-    Crypto: AECipherSigZK<F, Args>,
+    PubArgs: Clone,
+    PubArgsVar: AllocVar<PubArgs, F>,
+    PrivArgs: Clone,
+    PrivArgsVar: AllocVar<PrivArgs, F>,
+    CBArgs: Clone,
+    CBArgsVar: AllocVar<CBArgs, F>,
+    Crypto: AECipherSigZK<F, CBArgs>,
     const NUMCBS: usize,
 >(
-    interaction: Interaction<F, U, Args, ArgsVar, NUMCBS>,
-) -> [CallbackCom<F, Args, Crypto>; NUMCBS] {
+    interaction: Interaction<
+        F,
+        U,
+        PubArgs,
+        PubArgsVar,
+        PrivArgs,
+        PrivArgsVar,
+        CBArgs,
+        CBArgsVar,
+        NUMCBS,
+    >,
+) -> [CallbackCom<F, CBArgs, Crypto>; NUMCBS] {
     interaction
         .callbacks
         .iter()
@@ -195,7 +209,7 @@ pub(crate) fn create_defaults<
             let enc_key: Crypto::EncKey = Crypto::EncKey::default();
             let com_rand = F::zero();
 
-            let cb_data: CallbackTicket<F, Args, Crypto> = CallbackTicket {
+            let cb_data: CallbackTicket<F, CBArgs, Crypto> = CallbackTicket {
                 tik: ticket_value,
                 cb_method_id: cb.method_id,
                 expirable: cb.expirable,
@@ -210,21 +224,35 @@ pub(crate) fn create_defaults<
         })
         .collect::<Vec<_>>()
         .try_into()
-        .unwrap()
+        .unwrap_or_else(|_| panic!("Failed to create defaults."))
 }
 
 pub fn create_cbs_from_interaction<
     F: PrimeField + Absorb,
     U: UserData<F>,
-    Args: Clone + std::fmt::Debug,
-    ArgsVar: AllocVar<Args, F>,
-    Crypto: AECipherSigZK<F, Args>,
+    PubArgs: Clone + std::fmt::Debug,
+    PubArgsVar: AllocVar<PubArgs, F>,
+    PrivArgs: Clone + std::fmt::Debug,
+    PrivArgsVar: AllocVar<PrivArgs, F>,
+    CBArgs: Clone + std::fmt::Debug,
+    CBArgsVar: AllocVar<CBArgs, F>,
+    Crypto: AECipherSigZK<F, CBArgs>,
     const NUMCBS: usize,
 >(
     rng: &mut (impl CryptoRng + RngCore),
-    interaction: Interaction<F, U, Args, ArgsVar, NUMCBS>,
+    interaction: Interaction<
+        F,
+        U,
+        PubArgs,
+        PubArgsVar,
+        PrivArgs,
+        PrivArgsVar,
+        CBArgs,
+        CBArgsVar,
+        NUMCBS,
+    >,
     rpk_identities: [Crypto::SigPK; NUMCBS],
-) -> CBList<F, Crypto, Args, NUMCBS>
+) -> CBList<F, Crypto, CBArgs, NUMCBS>
 where
     Standard: Distribution<F>,
 {
@@ -237,7 +265,7 @@ where
             let enc_key = Crypto::EncKey::keygen(rng);
             let com_rand = rng.gen::<F>();
 
-            let cb_data: CallbackTicket<F, Args, Crypto> = CallbackTicket {
+            let cb_data: CallbackTicket<F, CBArgs, Crypto> = CallbackTicket {
                 tik: ticket_value,
                 cb_method_id: cb.method_id,
                 expirable: cb.expirable,

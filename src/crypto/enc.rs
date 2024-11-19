@@ -41,7 +41,7 @@ pub trait AECipherSigZK<F: PrimeField, Args: Clone>: Clone + std::fmt::Debug {
         + Default;
     type EncKeyVar: AllocVar<Self::EncKey, F> + ToConstraintFieldGadget<F> + Clone;
 
-    type Sig;
+    type Sig: Clone;
     type Rand: std::fmt::Debug + Clone + CanonicalSerialize + CanonicalDeserialize;
 
     type SigPK: RRVerifier<Self::Sig, Self::Ct, Self::Rand>

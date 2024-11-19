@@ -9,6 +9,8 @@ use ark_r1cs_std::prelude::AllocVar;
 use ark_relations::r1cs::SynthesisError;
 use ark_snark::SNARK;
 
+use super::object::Time;
+
 #[derive(Debug, Clone)]
 pub enum BulError<E> {
     VerifyError,
@@ -24,12 +26,12 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
     type MembershipPubVar: AllocVar<Self::MembershipPub, F> + Clone;
 
     #[allow(clippy::too_many_arguments)]
-    fn verify_in<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+    fn verify_in<PubArgs, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
         cb_com_list: [Com<F>; NUMCBS],
-        args: Args,
+        args: PubArgs,
         proof: Snark::Proof,
         memb_data: Self::MembershipPub,
         verif_key: &Snark::VerifyingKey,
@@ -46,23 +48,23 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     fn has_never_recieved_nul(&self, nul: &Nul<F>) -> bool;
 
     #[allow(clippy::too_many_arguments)]
-    fn append_value<Args, Snark: SNARK<F>, const NUMCBS: usize>(
+    fn append_value<PubArgs, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,
         cb_com_list: [Com<F>; NUMCBS],
-        args: Args,
+        args: PubArgs,
         proof: Snark::Proof,
         memb_data: Self::MembershipPub, // membership for the PREVIOUS object, meant to verify the proof: NOT membership for current object
         verif_key: &Snark::VerifyingKey,
     ) -> Result<(), Self::Error>;
 
     #[allow(clippy::too_many_arguments)]
-    fn verify_interaction<Args: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
+    fn verify_interaction<PubArgs: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
-        args: Args,
+        args: PubArgs,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
         memb_data: Self::MembershipPub,
@@ -82,20 +84,20 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
 
     #[allow(clippy::too_many_arguments)]
     fn verify_interact_and_append<
-        Args: ToConstraintField<F> + Clone,
+        PubArgs: ToConstraintField<F> + Clone,
         Snark: SNARK<F>,
         const NUMCBS: usize,
     >(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,
-        args: Args,
+        args: PubArgs,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
         memb_data: Self::MembershipPub,
         verif_key: &Snark::VerifyingKey,
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.verify_interaction::<Args, Snark, NUMCBS>(
+        let out = self.verify_interaction::<PubArgs, Snark, NUMCBS>(
             object,
             old_nul,
             args.clone(),
@@ -109,7 +111,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
             return Err(BulError::VerifyError);
         }
 
-        self.append_value::<Args, Snark, NUMCBS>(
+        self.append_value::<PubArgs, Snark, NUMCBS>(
             object,
             old_nul,
             cb_com_list,
@@ -124,20 +126,22 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     }
 }
 
-pub trait PublicCallbackBul<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
+pub trait PublicCallbackBul<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<F, CBArgs>> {
     type Error;
 
-    type MembershipWitness;
+    type MembershipWitness: Clone;
     type MembershipWitnessVar: AllocVar<Self::MembershipWitness, F>;
-    type NonMembershipWitness;
+    type NonMembershipWitness: Clone;
     type NonMembershipWitnessVar: AllocVar<Self::NonMembershipWitness, F>;
 
-    type MembershipPub;
+    type MembershipPub: Clone;
     type MembershipPubVar: AllocVar<Self::MembershipPub, F>;
-    type NonMembershipPub;
+    type NonMembershipPub: Clone;
     type NonMembershipPubVar: AllocVar<Self::NonMembershipPub, F>;
 
-    fn verify_in(&self, tik: Crypto::SigPK, enc_args: Crypto::Ct) -> bool;
+    fn verify_in(&self, tik: Crypto::SigPK) -> Option<(Crypto::Ct, Time<F>)>;
+
+    fn verify_not_in(&self, tik: Crypto::SigPK) -> bool;
 
     fn enforce_membership_of(
         tikvar: Crypto::SigPKV,
@@ -152,13 +156,17 @@ pub trait PublicCallbackBul<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F,
     ) -> Result<(), SynthesisError>;
 }
 
-pub trait CallbackBulletin<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F, Args>>:
-    PublicCallbackBul<F, Args, Crypto>
+pub trait CallbackBulletin<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<F, CBArgs>>:
+    PublicCallbackBul<F, CBArgs, Crypto>
 {
     fn has_never_recieved_tik(&self, tik: &Crypto::SigPK) -> bool;
 
-    fn append_value(&mut self, tik: Crypto::SigPK, enc_args: Crypto::Ct)
-        -> Result<(), Self::Error>;
+    fn append_value(
+        &mut self,
+        tik: Crypto::SigPK,
+        enc_args: Crypto::Ct,
+        signature: Crypto::Sig,
+    ) -> Result<(), Self::Error>;
 
     fn verify_call(
         &self,
@@ -178,13 +186,13 @@ pub trait CallbackBulletin<F: PrimeField, Args: Clone, Crypto: AECipherSigZK<F, 
         enc_args: Crypto::Ct,
         signature: Crypto::Sig,
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.verify_call(tik.clone(), enc_args.clone(), signature);
+        let out = self.verify_call(tik.clone(), enc_args.clone(), signature.clone());
 
         if !out {
             return Err(BulError::VerifyError);
         }
 
-        self.append_value(tik, enc_args)
+        self.append_value(tik, enc_args, signature)
             .map_err(BulError::AppendError)?;
 
         Ok(())

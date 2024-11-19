@@ -19,6 +19,7 @@ type Called<F, A, Crypto> = (
 
 pub trait ServiceProvider {
     type Error;
+
     type InteractionData;
 
     fn call<
@@ -36,50 +37,48 @@ pub trait ServiceProvider {
         Ok((ticket.cb_entry.tik, enc, sig))
     }
 
-    #[allow(async_fn_in_trait)]
     async fn has_never_recieved_tik<
         F: PrimeField + Absorb,
-        Args: Clone,
-        Crypto: AECipherSigZK<F, Args>,
+        CBArgs: Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
     >(
         &self,
         ticket: Crypto::SigPK,
     ) -> bool;
 
-    #[allow(async_fn_in_trait)]
     async fn store_interaction<
         F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
-        Args: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, Args>,
+        CBArgs: Clone + ToConstraintField<F>,
+        Crypto: AECipherSigZK<F, CBArgs>,
         const NUMCBS: usize,
     >(
         &self,
-        interaction: ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        interaction: ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         data: Self::InteractionData,
     ) -> Result<(), Self::Error>;
 
-    #[allow(async_fn_in_trait)]
     async fn approve_interaction<
         F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
-        Args: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, Args>,
+        PubArgs: Clone + ToConstraintField<F>,
+        CBArgs: Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
         &self,
-        interaction_request: &ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        interaction_request: &ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
-        args: Args,
-        bul: Bul,
+        args: PubArgs,
+        bul: &Bul,
         memb_data: Bul::MembershipPub,
         verif_key: &Snark::VerifyingKey,
     ) -> bool {
         let out = bul
-            .verify_in::<Args, Snark, NUMCBS>(
+            .verify_in::<PubArgs, Snark, NUMCBS>(
                 interaction_request.new_object,
                 interaction_request.old_nullifier,
                 interaction_request.cb_com_list,
@@ -102,7 +101,7 @@ pub trait ServiceProvider {
             }
 
             if !self
-                .has_never_recieved_tik::<F, Args, Crypto>(cb.cb_entry.tik)
+                .has_never_recieved_tik::<F, CBArgs, Crypto>(cb.cb_entry.tik)
                 .await
             {
                 return false;
@@ -119,22 +118,21 @@ pub trait ServiceProvider {
         Snark::verify(verif_key, &pub_inputs, &interaction_request.proof).unwrap_or(false)
     }
 
-    #[allow(async_fn_in_trait)]
-    #[allow(clippy::too_many_arguments)]
     async fn approve_interaction_and_store<
         F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
-        Args: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, Args>,
+        PubArgs: Clone + ToConstraintField<F>,
+        CBArgs: Clone + ToConstraintField<F>,
+        Crypto: AECipherSigZK<F, CBArgs>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
         &self,
-        interaction_request: ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        interaction_request: ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
-        args: Args,
-        bul: Bul,
+        args: PubArgs,
+        bul: &Bul,
         memb_data: Bul::MembershipPub,
         verif_key: &Snark::VerifyingKey,
         data: Self::InteractionData,
@@ -147,7 +145,7 @@ pub trait ServiceProvider {
             return Err(BulError::VerifyError);
         }
 
-        self.store_interaction::<F, U, Snark, Args, Crypto, NUMCBS>(interaction_request, data)
+        self.store_interaction::<F, U, Snark, CBArgs, Crypto, NUMCBS>(interaction_request, data)
             .await
             .map_err(BulError::AppendError)
     }

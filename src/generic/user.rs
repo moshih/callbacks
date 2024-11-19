@@ -73,13 +73,13 @@ impl<F: PrimeField + Absorb, U: UserData<F>> AllocVar<User<F, U>, F> for UserVar
 pub struct ExecutedMethod<
     F: PrimeField + Absorb,
     Snark: SNARK<F>,
-    Args: Clone,
-    Crypto: AECipherSigZK<F, Args>,
+    CBArgs: Clone,
+    Crypto: AECipherSigZK<F, CBArgs>,
     const NUMCBS: usize,
 > {
     pub new_object: Com<F>,
     pub old_nullifier: Nul<F>,
-    pub cb_tik_list: [(CallbackCom<F, Args, Crypto>, Crypto::Rand); NUMCBS],
+    pub cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS],
     pub cb_com_list: [Com<F>; NUMCBS],
     pub proof: Snark::Proof,
 }
@@ -111,21 +111,37 @@ where
 
     pub fn interact<
         H: FieldHash<F>,
-        Args: Clone + std::fmt::Debug,
-        ArgsVar: AllocVar<Args, F> + Clone,
-        Crypto: AECipherSigZK<F, Args>,
+        PubArgs: Clone + std::fmt::Debug,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone + std::fmt::Debug,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        CBArgs: Clone + std::fmt::Debug,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
         Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        method: Interaction<F, U, Args, ArgsVar, NUMCBS>,
+        method: Interaction<
+            F,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            NUMCBS,
+        >,
         rpks: [Crypto::SigPK; NUMCBS],
         bul_data: (Bul::MembershipWitness, Bul::MembershipPub),
         pk: &Snark::ProvingKey,
-        args: Args,
-    ) -> Result<ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>, SynthesisError> {
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+        is_scan: bool,
+    ) -> Result<ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>, SynthesisError> {
         // Steps:
         // a) update user/self [ old user ] --> method(user) [ new user ]
         // b) update user's zk fields properly (new nul, new comrand, proper cblist, etc)
@@ -135,20 +151,20 @@ where
 
         // (A) update the user object
         // Create the new zk_object from the method
-        let mut new_user = (method.meth.0)(self, args.clone());
+        let mut new_user = (method.meth.0)(self, pub_args.clone(), priv_args.clone());
 
         // (B) update the new users zk fields properly
 
         new_user.zk_fields.nul = rng.gen();
         new_user.zk_fields.com_rand = rng.gen();
 
-        let cb_tik_list: [(CallbackCom<F, Args, Crypto>, Crypto::Rand); NUMCBS] =
+        let cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS] =
             create_cbs_from_interaction(rng, method.clone(), rpks);
 
-        let issued_callbacks: [CallbackCom<F, Args, Crypto>; NUMCBS] = cb_tik_list
+        let issued_callbacks: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] = cb_tik_list
             .iter()
             .map(|(x, _)| x.clone())
-            .collect::<Vec<CallbackCom<F, Args, Crypto>>>()
+            .collect::<Vec<CallbackCom<F, CBArgs, Crypto>>>()
             .try_into()
             .unwrap();
 
@@ -164,13 +180,15 @@ where
             item.clone().serialize_compressed(&mut cb).unwrap();
             new_user.callbacks.push(cb);
 
-            new_user.zk_fields.callback_hash = add_ticket_to_hc::<F, H, Args, Crypto>(
+            new_user.zk_fields.callback_hash = add_ticket_to_hc::<F, H, CBArgs, Crypto>(
                 new_user.zk_fields.callback_hash,
                 item.clone().cb_entry,
             );
         }
 
-        new_user.zk_fields.old_in_progress_callback_hash = new_user.zk_fields.callback_hash;
+        if !is_scan {
+            new_user.zk_fields.old_in_progress_callback_hash = new_user.zk_fields.callback_hash;
+        }
 
         // (C) Generate proof of correctness
         // Extract the zk fields from the objects to do bookkeeping
@@ -179,22 +197,36 @@ where
 
         let out_nul = self.zk_fields.nul;
 
-        let exec_method_circ: ExecMethodCircuit<F, H, U, Args, ArgsVar, Crypto, Bul, NUMCBS> =
-            ExecMethodCircuit {
-                priv_old_user: self.clone(),
-                priv_new_user: new_user.clone(),
-                priv_issued_callbacks: issued_callbacks,
-                priv_bul_membership_witness: bul_data.0,
+        let exec_method_circ: ExecMethodCircuit<
+            F,
+            H,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            Crypto,
+            Bul,
+            NUMCBS,
+        > = ExecMethodCircuit {
+            priv_old_user: self.clone(),
+            priv_new_user: new_user.clone(),
+            priv_issued_callbacks: issued_callbacks,
+            priv_bul_membership_witness: bul_data.0,
+            priv_args,
 
-                pub_new_com: out_commit,
-                pub_old_nul: out_nul,
-                pub_issued_callback_coms: issued_cb_coms,
-                pub_args: args,
-                pub_bul_membership_data: bul_data.1,
+            pub_new_com: out_commit,
+            pub_old_nul: out_nul,
+            pub_issued_callback_coms: issued_cb_coms,
+            pub_args,
+            pub_bul_membership_data: bul_data.1,
 
-                associated_method: method,
-                _phantom_hash: core::marker::PhantomData,
-            };
+            associated_method: method,
+            is_scan,
+            _phantom_hash: core::marker::PhantomData,
+        };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
         exec_method_circ
@@ -218,23 +250,28 @@ where
 
     pub fn prove_statement<
         H: FieldHash<F>,
-        Args: Clone,
-        ArgsVar: AllocVar<Args, F> + Clone,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, ArgsVar>,
+        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
-        args: Args,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
     ) -> Result<ProveResult<F, Snark>, SynthesisError> {
-        let ppcirc: ProvePredicateCircuit<F, U, Args, ArgsVar> = ProvePredicateCircuit {
-            priv_user: self.clone(),
-            pub_com: self.commit::<H>(),
+        let ppcirc: ProvePredicateCircuit<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> =
+            ProvePredicateCircuit {
+                priv_user: self.clone(),
+                pub_com: self.commit::<H>(),
+                priv_args,
 
-            pub_args: args,
-            associated_method: predicate,
-        };
+                pub_args,
+                associated_method: predicate,
+            };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
         ppcirc.clone().generate_constraints(new_cs.clone())?;
@@ -250,27 +287,32 @@ where
 
     pub fn prove_statement_and_in<
         H: FieldHash<F>,
-        Args: Clone,
-        ArgsVar: AllocVar<Args, F> + Clone,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, ArgsVar>,
+        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
         memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
-        args: Args,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
     ) -> Result<Snark::Proof, SynthesisError> {
-        let ppcirc: ProvePredInCircuit<F, H, U, Args, ArgsVar, Bul> = ProvePredInCircuit {
-            priv_user: self.clone(),
-            priv_extra_membership_data: memb_data.0,
-            pub_extra_membership_data: memb_data.1,
-            pub_args: args,
-            associated_method: predicate,
+        let ppcirc: ProvePredInCircuit<F, H, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, Bul> =
+            ProvePredInCircuit {
+                priv_user: self.clone(),
+                priv_extra_membership_data: memb_data.0,
+                priv_args,
+                pub_extra_membership_data: memb_data.1,
+                pub_args,
+                associated_method: predicate,
 
-            _phantom_hash: core::marker::PhantomData,
-        };
+                _phantom_hash: core::marker::PhantomData,
+            };
 
         let new_cs = ConstraintSystem::<F>::new_ref();
         ppcirc.clone().generate_constraints(new_cs.clone())?;

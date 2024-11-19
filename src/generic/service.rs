@@ -37,7 +37,11 @@ pub trait ServiceProvider {
         Ok((ticket.cb_entry.tik, enc, sig))
     }
 
-    fn has_never_recieved_tik<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>(
+    fn has_never_recieved_tik<
+        F: PrimeField + Absorb,
+        CBArgs: Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
+    >(
         &self,
         ticket: Crypto::SigPK,
     ) -> bool;
@@ -46,12 +50,12 @@ pub trait ServiceProvider {
         F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
-        Args: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, Args>,
+        CBArgs: Clone + ToConstraintField<F>,
+        Crypto: AECipherSigZK<F, CBArgs>,
         const NUMCBS: usize,
     >(
         &self,
-        interaction: ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        interaction: ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         data: Self::InteractionData,
     ) -> Result<(), Self::Error>;
 
@@ -59,20 +63,21 @@ pub trait ServiceProvider {
         F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
-        Args: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, Args>,
+        PubArgs: Clone + ToConstraintField<F>,
+        CBArgs: Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
         &self,
-        interaction_request: &ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        interaction_request: &ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
-        args: Args,
+        args: PubArgs,
         bul: &Bul,
         memb_data: Bul::MembershipPub,
         verif_key: &Snark::VerifyingKey,
     ) -> bool {
-        let out = bul.verify_in::<Args, Snark, NUMCBS>(
+        let out = bul.verify_in::<PubArgs, Snark, NUMCBS>(
             interaction_request.new_object,
             interaction_request.old_nullifier,
             interaction_request.cb_com_list,
@@ -93,7 +98,7 @@ pub trait ServiceProvider {
                 return false;
             }
 
-            if !self.has_never_recieved_tik::<F, Args, Crypto>(cb.cb_entry.tik) {
+            if !self.has_never_recieved_tik::<F, CBArgs, Crypto>(cb.cb_entry.tik) {
                 return false;
             }
         }
@@ -112,15 +117,16 @@ pub trait ServiceProvider {
         F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
-        Args: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, Args>,
+        PubArgs: Clone + ToConstraintField<F>,
+        CBArgs: Clone + ToConstraintField<F>,
+        Crypto: AECipherSigZK<F, CBArgs>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
         &self,
-        interaction_request: ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+        interaction_request: ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
-        args: Args,
+        args: PubArgs,
         bul: &Bul,
         memb_data: Bul::MembershipPub,
         verif_key: &Snark::VerifyingKey,
@@ -133,7 +139,7 @@ pub trait ServiceProvider {
             return Err(BulError::VerifyError);
         }
 
-        self.store_interaction::<F, U, Snark, Args, Crypto, NUMCBS>(interaction_request, data)
+        self.store_interaction::<F, U, Snark, CBArgs, Crypto, NUMCBS>(interaction_request, data)
             .map_err(BulError::AppendError)
     }
 }

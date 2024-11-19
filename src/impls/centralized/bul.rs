@@ -4,7 +4,7 @@ use crate::generic::asynchr::bulletin::{
 use crate::generic::asynchr::service::ServiceProvider;
 use crate::generic::bulletin;
 use crate::generic::callbacks::CallbackCom;
-use crate::generic::object::{Com, ComVar, Nul};
+use crate::generic::object::{Com, ComVar, Nul, Time};
 use crate::generic::user::UserData;
 use crate::impls::centralized::crypto::{PlainTikCrypto, PlainTikCryptoVar};
 use crate::util::UnitVar;
@@ -58,10 +58,14 @@ pub trait DbHandle {
         &self,
         ticket: &[u8],
         enc_args: &[u8],
+        sig: &[u8],
     ) -> Result<(), Self::Error>;
 
     #[allow(async_fn_in_trait)]
-    async fn has_ticket_been_called(&self, ticket: &[u8], enc_args: &[u8]) -> bool;
+    async fn has_ticket_been_called(&self, ticket: &[u8]) -> Option<(&[u8], &[u8], &[u8])>;
+
+    #[allow(async_fn_in_trait)]
+    async fn has_ticket_not_been_called(&self, ticket: &[u8]) -> bool;
 }
 
 pub struct CentralObjectStore<D: DbHandle>(pub D);
@@ -194,31 +198,43 @@ where
     type NonMembershipWitness = ();
     type NonMembershipWitnessVar = UnitVar;
 
-    async fn verify_in(&self, tik: PlainTikCrypto<F>, enc_args: F) -> bool {
+    async fn verify_in(&self, tik: PlainTikCrypto<F>) -> Option<(F, (), Time<F>)> {
         let mut tik_serial = Vec::new();
         tik.serialize_with_mode(&mut tik_serial, Compress::Yes)
             .unwrap();
-        let mut enc_args_serial = Vec::new();
-        enc_args
-            .serialize_with_mode(&mut enc_args_serial, Compress::Yes)
-            .unwrap();
         self.0
-            .has_ticket_been_called(&tik_serial, &enc_args_serial)
+            .has_ticket_been_called(&tik_serial)
             .await
+            .map(|(a, _, c)| {
+                let args = F::deserialize_with_mode(a, Compress::Yes, ark_serialize::Validate::No)
+                    .unwrap();
+                let sig = ();
+                let time =
+                    Time::<F>::deserialize_with_mode(c, Compress::Yes, ark_serialize::Validate::No)
+                        .unwrap();
+                (args, sig, time)
+            })
     }
 
+    async fn verify_not_in(&self, tik: PlainTikCrypto<F>) -> bool {
+        let mut tik_serial = Vec::new();
+        tik.serialize_with_mode(&mut tik_serial, Compress::Yes)
+            .unwrap();
+
+        self.0.has_ticket_not_been_called(&tik_serial).await
+    }
     fn enforce_membership_of(
         tikvar: PlainTikCryptoVar<F>,
-        extra_witness: Self::MembershipWitness,
-        extra_pub: Self::MembershipPub,
+        extra_witness: Self::MembershipWitnessVar,
+        extra_pub: Self::MembershipPubVar,
     ) -> Result<(), SynthesisError> {
         Ok(())
     }
 
     fn enforce_nonmembership_of(
         tikvar: PlainTikCryptoVar<F>,
-        extra_witness: Self::NonMembershipWitness,
-        extra_pub: Self::NonMembershipPub,
+        extra_witness: Self::NonMembershipWitnessVar,
+        extra_pub: Self::NonMembershipPubVar,
     ) -> Result<(), SynthesisError> {
         Ok(())
     }
@@ -236,6 +252,7 @@ where
         &mut self,
         tik: PlainTikCrypto<F>,
         enc_args: F,
+        sig: (),
     ) -> Result<(), Self::Error> {
         let mut tik_serial = Vec::new();
         tik.serialize_with_mode(&mut tik_serial, Compress::Yes)
@@ -245,7 +262,7 @@ where
             .serialize_with_mode(&mut enc_args_serial, Compress::Yes)
             .unwrap();
         self.0
-            .publish_called_ticket(&tik_serial, &enc_args_serial)
+            .publish_called_ticket(&tik_serial, &enc_args_serial, &vec![])
             .await
     }
 }
@@ -330,7 +347,9 @@ pub trait NetworkHandle {
 
     fn object_is_in(&self, object: &[u8], old_nul: &[u8], cb_com_list: &[u8]) -> bool;
 
-    fn has_ticket_been_called(&self, ticket: &[u8], enc_args: &[u8]) -> bool;
+    fn has_ticket_been_called(&self, ticket: &[u8]) -> Option<(&[u8], &[u8], &[u8])>;
+
+    fn has_ticket_not_been_called(&self, ticket: &[u8]) -> bool;
 }
 
 pub struct CentralNetBulStore<N: NetworkHandle>(pub N);
@@ -398,29 +417,40 @@ where
     type NonMembershipWitness = ();
     type NonMembershipWitnessVar = UnitVar;
 
-    fn verify_in(&self, tik: PlainTikCrypto<F>, enc_args: F) -> bool {
+    fn verify_in(&self, tik: PlainTikCrypto<F>) -> Option<(F, Time<F>)> {
         let mut tik_serial = Vec::new();
         tik.serialize_with_mode(&mut tik_serial, Compress::Yes)
             .unwrap();
-        let mut enc_args_serial = Vec::new();
-        enc_args
-            .serialize_with_mode(&mut enc_args_serial, Compress::Yes)
+        self.0.has_ticket_been_called(&tik_serial).map(|(a, _, c)| {
+            let args =
+                F::deserialize_with_mode(a, Compress::Yes, ark_serialize::Validate::No).unwrap();
+            let time =
+                Time::<F>::deserialize_with_mode(c, Compress::Yes, ark_serialize::Validate::No)
+                    .unwrap();
+            (args, time)
+        })
+    }
+
+    fn verify_not_in(&self, tik: PlainTikCrypto<F>) -> bool {
+        let mut tik_serial = Vec::new();
+        tik.serialize_with_mode(&mut tik_serial, Compress::Yes)
             .unwrap();
-        self.0.has_ticket_been_called(&tik_serial, &enc_args_serial)
+
+        self.0.has_ticket_not_been_called(&tik_serial)
     }
 
     fn enforce_membership_of(
         tikvar: PlainTikCryptoVar<F>,
-        extra_witness: Self::MembershipWitness,
-        extra_pub: Self::MembershipPub,
+        extra_witness: Self::MembershipWitnessVar,
+        extra_pub: Self::MembershipPubVar,
     ) -> Result<(), SynthesisError> {
         Ok(())
     }
 
     fn enforce_nonmembership_of(
         tikvar: PlainTikCryptoVar<F>,
-        extra_witness: Self::NonMembershipWitness,
-        extra_pub: Self::NonMembershipPub,
+        extra_witness: Self::NonMembershipWitnessVar,
+        extra_pub: Self::NonMembershipPubVar,
     ) -> Result<(), SynthesisError> {
         Ok(())
     }

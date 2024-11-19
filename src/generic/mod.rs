@@ -6,5 +6,6 @@ pub mod bulletin;
 pub mod callbacks;
 pub mod interaction;
 pub mod object;
+pub mod scan;
 pub mod service;
 pub mod user;

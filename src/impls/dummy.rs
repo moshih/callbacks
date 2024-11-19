@@ -2,13 +2,14 @@ use crate::crypto::enc::AECipherSigZK;
 use crate::generic::bulletin::{
     CallbackBulletin, JoinableBulletin, PublicCallbackBul, PublicUserBul, UserBul,
 };
+use crate::generic::object::Time;
 use crate::generic::service::ServiceProvider;
 use crate::generic::user::UserData;
 use crate::util::UnitVar;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DummyStore;
 
 impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for DummyStore {
@@ -90,8 +91,11 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
     fn verify_in(
         &self,
         _tik: <Crypto as AECipherSigZK<F, Args>>::SigPK,
-        _enc_args: <Crypto as AECipherSigZK<F, Args>>::Ct,
-    ) -> bool {
+    ) -> Option<(<Crypto as AECipherSigZK<F, Args>>::Ct, Time<F>)> {
+        None
+    }
+
+    fn verify_not_in(&self, _tik: <Crypto as AECipherSigZK<F, Args>>::SigPK) -> bool {
         true
     }
 
@@ -123,6 +127,7 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
         &mut self,
         _tik: <Crypto as AECipherSigZK<F, Args>>::SigPK,
         _enc_args: <Crypto as AECipherSigZK<F, Args>>::Ct,
+        _sig: <Crypto as AECipherSigZK<F, Args>>::Sig,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
