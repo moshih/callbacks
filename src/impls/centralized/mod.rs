@@ -3,3 +3,5 @@
 #[doc(cfg(feature = "asynchr"))]
 pub mod bul;
 pub mod crypto;
+
+pub mod sigtest;

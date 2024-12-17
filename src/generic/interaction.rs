@@ -21,16 +21,16 @@ use core::marker::PhantomData;
 use rand::distributions::{Distribution, Standard};
 use rand::{CryptoRng, RngCore};
 
-pub type Predicate<UserVar, PubArgsVar, PrivArgsVar> =
-    fn(&UserVar, &UserVar, PubArgsVar, PrivArgsVar) -> ArkResult<()>;
+pub type Predicate<F, UserVar, PubArgsVar, PrivArgsVar> =
+    fn(&UserVar, &UserVar, PubArgsVar, PrivArgsVar) -> ArkResult<Boolean<F>>;
 
-pub type SingularPredicate<UserVar, PubUserCom, PubArgsVar, PrivArgsVar> =
-    fn(&UserVar, &PubUserCom, PubArgsVar, PrivArgsVar) -> ArkResult<()>;
+pub type SingularPredicate<F, UserVar, PubUserCom, PubArgsVar, PrivArgsVar> =
+    fn(&UserVar, &PubUserCom, PubArgsVar, PrivArgsVar) -> ArkResult<Boolean<F>>;
 
 pub type Method<User, PubArgs, PrivArgs> = fn(&User, PubArgs, PrivArgs) -> User;
 
 pub type NoPrivMethod<User, Args> = fn(&User, Args) -> User;
-pub type NoPrivPredicate<UserVar, ArgsVar> = fn(&UserVar, &UserVar, ArgsVar) -> ArkResult<()>;
+pub type NoPrivPredicate<UserVar, ArgsVar> = fn(&UserVar, ArgsVar) -> ArkResult<UserVar>;
 
 #[derive(Clone)]
 pub struct Callback<F: PrimeField + Absorb, U: UserData<F>, Args, ArgsVar: AllocVar<Args, F>> {
@@ -44,7 +44,7 @@ pub struct Callback<F: PrimeField + Absorb, U: UserData<F>, Args, ArgsVar: Alloc
 pub type CallbackList<F, U, A, X, const N: usize> = [Callback<F, U, A, X>; N];
 pub type MethProof<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> = (
     Method<User<F, U>, PubArgs, PrivArgs>,
-    Predicate<UserVar<F, U>, PubArgsVar, PrivArgsVar>,
+    Predicate<F, UserVar<F, U>, PubArgsVar, PrivArgsVar>,
 );
 
 #[derive(Clone)]
@@ -211,7 +211,7 @@ impl<
                 Ok(&self.pub_issued_callback_coms)
             })?;
 
-        let pub_bul_data = Bul::MembershipPubVar::new_witness(ns!(cs, "pub_bul_data"), || {
+        let pub_bul_data = Bul::MembershipPubVar::new_input(ns!(cs, "pub_bul_data"), || {
             Ok(&self.pub_bul_membership_data)
         })?;
 
@@ -223,7 +223,14 @@ impl<
         )?;
 
         // Enforce any method-specific predicates
-        (self.associated_method.meth.1)(&old_user_var, &new_user_var, pub_args_var, priv_args_var)?;
+        let b = (self.associated_method.meth.1)(
+            &old_user_var,
+            &new_user_var,
+            pub_args_var,
+            priv_args_var,
+        )?;
+
+        b.enforce_equal(&Boolean::TRUE)?;
 
         let mut old_zk_fields = old_user_var.clone().zk_fields;
         let new_zk_fields = new_user_var.clone().zk_fields;
@@ -338,7 +345,7 @@ pub fn generate_keys_for_statement<
     PrivArgsVar: AllocVar<PrivArgs, F>,
     Snark: SNARK<F>,
 >(
-    pred: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+    pred: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> (Snark::ProvingKey, Snark::VerifyingKey)
 where
@@ -372,7 +379,7 @@ pub(crate) struct ProvePredicateCircuit<
     pub pub_com: Com<F>,
     pub pub_args: PubArgs,
 
-    pub associated_method: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+    pub associated_method: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
 }
 
 impl<
@@ -392,7 +399,9 @@ impl<
         let com_var = ComVar::new_input(ns!(cs, "com"), || Ok(&self.pub_com))?;
         let pub_args_var = PubArgsVar::new_input(ns!(cs, "pub_args"), || Ok(&self.pub_args))?;
 
-        (self.associated_method)(&user_var, &com_var, pub_args_var, priv_args_var)?;
+        let b = (self.associated_method)(&user_var, &com_var, pub_args_var, priv_args_var)?;
+
+        b.enforce_equal(&Boolean::TRUE)?;
 
         Ok(())
     }
@@ -409,7 +418,7 @@ pub fn generate_keys_for_statement_in<
     Snark: SNARK<F>,
     Bul: PublicUserBul<F, U>,
 >(
-    pred: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+    pred: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> (Snark::ProvingKey, Snark::VerifyingKey)
 where
@@ -448,7 +457,7 @@ pub(crate) struct ProvePredInCircuit<
     // Public
     pub pub_args: PubArgs,
     pub pub_extra_membership_data: Bul::MembershipPub,
-    pub associated_method: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+    pub associated_method: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
 
     pub _phantom_hash: PhantomData<H>,
 }
@@ -507,7 +516,10 @@ impl<
 
         let com = User::commit_in_zk::<H>(user_var.clone())?;
 
-        (self.associated_method)(&user_var, &com, pub_args_var, priv_args_var)?;
+        let b = (self.associated_method)(&user_var, &com, pub_args_var, priv_args_var)?;
+
+        b.enforce_equal(&Boolean::TRUE)?;
+
         Bul::enforce_membership_of(
             User::commit_in_zk::<H>(user_var)?,
             extra_data_for_membership,

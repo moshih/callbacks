@@ -17,55 +17,33 @@ type Called<F, A, Crypto> = (
     <Crypto as AECipherSigZK<F, A>>::Sig,
 );
 
-pub trait ServiceProvider {
+pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECipherSigZK<F, CBArgs>> {
     type Error;
 
     type InteractionData;
 
-    fn call<
-        F: PrimeField + Absorb,
-        A: Clone,
-        Crypto: AECipherSigZK<F, A>,
-        Bul: PublicCallbackBul<F, A, Crypto>,
-    >(
+    fn call<Bul: PublicCallbackBul<F, CBArgs, Crypto>>(
         &self,
-        ticket: CallbackCom<F, A, Crypto>,
-        arguments: A,
+        ticket: CallbackCom<F, CBArgs, Crypto>,
+        arguments: CBArgs,
         sk: Crypto::SigSK,
-    ) -> Result<Called<F, A, Crypto>, Bul::Error> {
+    ) -> Result<Called<F, CBArgs, Crypto>, Bul::Error> {
         let (enc, sig) = Crypto::encrypt_and_sign(arguments, ticket.cb_entry.enc_key, sk);
         Ok((ticket.cb_entry.tik, enc, sig))
     }
 
-    fn has_never_recieved_tik<
-        F: PrimeField + Absorb,
-        CBArgs: Clone,
-        Crypto: AECipherSigZK<F, CBArgs>,
-    >(
-        &self,
-        ticket: Crypto::SigPK,
-    ) -> bool;
+    fn has_never_recieved_tik(&self, ticket: Crypto::SigPK) -> bool;
 
-    fn store_interaction<
-        F: PrimeField + Absorb,
-        U: UserData<F>,
-        Snark: SNARK<F>,
-        CBArgs: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, CBArgs>,
-        const NUMCBS: usize,
-    >(
-        &self,
+    fn store_interaction<U: UserData<F>, Snark: SNARK<F>, const NUMCBS: usize>(
+        &mut self,
         interaction: ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         data: Self::InteractionData,
     ) -> Result<(), Self::Error>;
 
     fn approve_interaction<
-        F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
         PubArgs: Clone + ToConstraintField<F>,
-        CBArgs: Clone,
-        Crypto: AECipherSigZK<F, CBArgs>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
@@ -98,7 +76,7 @@ pub trait ServiceProvider {
                 return false;
             }
 
-            if !self.has_never_recieved_tik::<F, CBArgs, Crypto>(cb.cb_entry.tik) {
+            if !self.has_never_recieved_tik(cb.cb_entry.tik) {
                 return false;
             }
         }
@@ -114,16 +92,13 @@ pub trait ServiceProvider {
     }
 
     fn approve_interaction_and_store<
-        F: PrimeField + Absorb,
         U: UserData<F>,
         Snark: SNARK<F>,
         PubArgs: Clone + ToConstraintField<F>,
-        CBArgs: Clone + ToConstraintField<F>,
-        Crypto: AECipherSigZK<F, CBArgs>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
-        &self,
+        &mut self,
         interaction_request: ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>,
         sk: Crypto::SigSK,
         args: PubArgs,
@@ -139,7 +114,7 @@ pub trait ServiceProvider {
             return Err(BulError::VerifyError);
         }
 
-        self.store_interaction::<F, U, Snark, CBArgs, Crypto, NUMCBS>(interaction_request, data)
+        self.store_interaction::<U, Snark, NUMCBS>(interaction_request, data)
             .map_err(BulError::AppendError)
     }
 }

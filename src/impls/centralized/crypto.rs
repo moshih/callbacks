@@ -13,7 +13,7 @@ use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 use rand::{CryptoRng, RngCore};
 
-use ark_r1cs_std::ToConstraintFieldGadget;
+use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_relations::r1cs::ToConstraintField;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, CanonicalSerialize, CanonicalDeserialize)]
@@ -60,7 +60,10 @@ where
     }
 
     fn rerand(&self, rng: &mut (impl CryptoRng + RngCore)) -> (F, Self) {
-        let out = rng.gen();
+        let mut out: F = rng.gen();
+        while out > F::from_bigint(F::MODULUS_MINUS_ONE_DIV_TWO).unwrap() {
+            out -= F::from_bigint(F::MODULUS_MINUS_ONE_DIV_TWO).unwrap();
+        }
         (out, PlainTikCrypto(out))
     }
 }
@@ -77,7 +80,10 @@ where
     type KeyVar = PlainTikCryptoVar<F>;
 
     fn keygen(rng: &mut (impl CryptoRng + RngCore)) -> Self {
-        let f = rng.gen();
+        let mut f: F = rng.gen();
+        while f > F::from_bigint(F::MODULUS_MINUS_ONE_DIV_TWO).unwrap() {
+            f -= F::from_bigint(F::MODULUS_MINUS_ONE_DIV_TWO).unwrap();
+        }
         Self(f)
     }
 
@@ -126,6 +132,8 @@ where
     type SigPKV = PlainTikCryptoVar<F>;
 
     type SigSK = PlainTikCrypto<F>;
+
+    type AV = FpVar<F>;
 
     type Ct = F;
 

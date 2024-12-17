@@ -8,19 +8,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ark-crypto-primitives = { version = "0.4.0", default-features = true, features = ["crh", "r1cs", "merkle_tree"] }
-ark-ec = "0.4.2"
-ark-bls12-381 = "0.4.0"
+ark-crypto-primitives = { version = "0.5.0", default-features = true, features = ["crh", "r1cs", "merkle_tree"] }
+ark-ec = "0.5.0"
+ark-bls12-381 = "0.5.0"
 zk-object = { path = "zk-object" }
-ark-snark = "0.4.0"
-ark-ff = "0.4.2"
-ark-r1cs-std = "0.4.0"
-ark-relations = "0.4.0"
-ark-groth16 = "0.4.0"
+ark-snark = "0.5.0"
+ark-ff = "0.5.0"
+ark-r1cs-std = "0.5.0"
+ark-relations = "0.5.0"
+ark-groth16 = "0.5.0"
 rand = "0.8.5"
-ark-bn254 = "0.4.0"
-ark-serialize = { version = "0.4.2", features = ["ark-serialize-derive", "derive", "std"] }
-circom_poseidon = { path = "circom-poseidon" }
+ark-bn254 = "0.5.0"
+ark-serialize = { version = "0.5.0", features = ["ark-serialize-derive", "derive", "std"] }
+circom_poseidon = { path = "circom-poseidon", optional = true }
+folding-schemes = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "folding-schemes" }
+nalgebra = "0.33.2"
 
 [features]
 asynchr = []

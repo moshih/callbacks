@@ -12,6 +12,7 @@ use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
+use ark_r1cs_std::prelude::CondSelectGadget;
 use ark_relations::ns;
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
@@ -43,6 +44,28 @@ pub struct User<F: PrimeField + Absorb, U: UserData<F>> {
 pub struct UserVar<F: PrimeField + Absorb, U: UserData<F>> {
     pub data: U::UserDataVar,
     pub zk_fields: ZKFieldsVar<F>,
+}
+
+impl<F: PrimeField + Absorb, U: UserData<F>> CondSelectGadget<F> for UserVar<F, U>
+where
+    U::UserDataVar: CondSelectGadget<F>,
+{
+    fn conditionally_select(
+        cond: &ark_r1cs_std::prelude::Boolean<F>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let d = U::UserDataVar::conditionally_select(cond, &true_value.data, &false_value.data)?;
+        let zkf = <ZKFieldsVar<F>>::conditionally_select(
+            cond,
+            &true_value.zk_fields,
+            &false_value.zk_fields,
+        )?;
+        Ok(Self {
+            data: d,
+            zk_fields: zkf,
+        })
+    }
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> AllocVar<User<F, U>, F> for UserVar<F, U> {
@@ -141,6 +164,7 @@ where
         pub_args: PubArgs,
         priv_args: PrivArgs,
         is_scan: bool,
+        print_constraints: bool,
     ) -> Result<ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>, SynthesisError> {
         // Steps:
         // a) update user/self [ old user ] --> method(user) [ new user ]
@@ -234,6 +258,10 @@ where
             .generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
+        if print_constraints {
+            println!("Constraints for interaction: {}", new_cs.num_constraints());
+        }
+
         let proof = Snark::prove(pk, exec_method_circ, rng)?;
 
         // (D) Update current object
@@ -258,10 +286,11 @@ where
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+        predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
         pub_args: PubArgs,
         priv_args: PrivArgs,
+        print_constraints: bool,
     ) -> Result<ProveResult<F, Snark>, SynthesisError> {
         let ppcirc: ProvePredicateCircuit<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> =
             ProvePredicateCircuit {
@@ -276,6 +305,13 @@ where
         let new_cs = ConstraintSystem::<F>::new_ref();
         ppcirc.clone().generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
+
+        if print_constraints {
+            println!(
+                "Constraints for proving statement: {}",
+                new_cs.num_constraints()
+            );
+        }
 
         let proof = Snark::prove(pk, ppcirc, rng)?;
 
@@ -296,11 +332,12 @@ where
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        predicate: SingularPredicate<UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+        predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
         memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
         pub_args: PubArgs,
         priv_args: PrivArgs,
+        print_constraints: bool,
     ) -> Result<Snark::Proof, SynthesisError> {
         let ppcirc: ProvePredInCircuit<F, H, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, Bul> =
             ProvePredInCircuit {
@@ -317,6 +354,13 @@ where
         let new_cs = ConstraintSystem::<F>::new_ref();
         ppcirc.clone().generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
+
+        if print_constraints {
+            println!(
+                "Constraints for proving statement + in storage: {}",
+                new_cs.num_constraints()
+            );
+        }
 
         let proof = Snark::prove(pk, ppcirc, rng)?;
 

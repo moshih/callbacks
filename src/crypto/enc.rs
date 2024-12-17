@@ -1,8 +1,8 @@
 use crate::crypto::rr::{RRSigner, RRVerifier};
 use ark_ff::PrimeField;
 use ark_ff::ToConstraintField;
+use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_r1cs_std::prelude::AllocVar;
-use ark_r1cs_std::ToConstraintFieldGadget;
 use ark_relations::r1cs::SynthesisError;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rand::{CryptoRng, RngCore};
@@ -16,7 +16,7 @@ pub trait CPACipher<F: PrimeField> {
 
     type MV: AllocVar<Self::M, F>;
 
-    type CV: AllocVar<Self::C, F>;
+    type CV: AllocVar<Self::C, F> + Clone;
 
     fn keygen(rng: &mut (impl CryptoRng + RngCore)) -> Self;
 
@@ -30,8 +30,10 @@ pub trait CPACipher<F: PrimeField> {
 }
 
 pub trait AECipherSigZK<F: PrimeField, Args: Clone>: Clone + std::fmt::Debug {
-    type Ct: Clone;
-    type EncKey: CPACipher<F, C = Self::Ct, M = Args, KeyVar = Self::EncKeyVar>
+    type Ct: Clone + Default;
+    type AV: AllocVar<Args, F>;
+
+    type EncKey: CPACipher<F, C = Self::Ct, M = Args, MV = Self::AV, KeyVar = Self::EncKeyVar>
         + ToConstraintField<F>
         + CanonicalSerialize
         + CanonicalDeserialize

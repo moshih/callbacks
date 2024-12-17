@@ -12,7 +12,7 @@ use ark_ff::ToConstraintField;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
 use ark_r1cs_std::boolean::Boolean;
-use ark_r1cs_std::ToConstraintFieldGadget;
+use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_relations::ns;
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::SynthesisError;

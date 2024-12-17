@@ -3,9 +3,10 @@ use ark_ff::ToConstraintField;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
 use ark_r1cs_std::boolean::Boolean;
+use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::select::CondSelectGadget;
 use ark_r1cs_std::R1CSVar;
-use ark_r1cs_std::ToConstraintFieldGadget;
 use ark_relations::ns;
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
@@ -168,6 +169,50 @@ impl<F: PrimeField> AllocVar<ZKFields<F>, F> for ZKFieldsVar<F> {
                 old_in_progress_callback_hash,
                 is_ingest_over,
             })
+        })
+    }
+}
+
+impl<F: PrimeField> CondSelectGadget<F> for ZKFieldsVar<F> {
+    fn conditionally_select(
+        cond: &Boolean<F>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let nul = <NulVar<F>>::conditionally_select(cond, &true_value.nul, &false_value.nul)?;
+        let com_rand = <ComRandVar<F>>::conditionally_select(
+            cond,
+            &true_value.com_rand,
+            &false_value.com_rand,
+        )?;
+        let callback_hash = <CBHashVar<F> as CondSelectGadget<F>>::conditionally_select(
+            cond,
+            &true_value.callback_hash,
+            &false_value.callback_hash,
+        )?;
+        let new_in_progress_callback_hash = <CBHashVar<F>>::conditionally_select(
+            cond,
+            &true_value.new_in_progress_callback_hash,
+            &false_value.new_in_progress_callback_hash,
+        )?;
+        let old_in_progress_callback_hash = <CBHashVar<F>>::conditionally_select(
+            cond,
+            &true_value.old_in_progress_callback_hash,
+            &false_value.old_in_progress_callback_hash,
+        )?;
+        let is_ingest_over = <Boolean<F>>::conditionally_select(
+            cond,
+            &true_value.is_ingest_over,
+            &false_value.is_ingest_over,
+        )?;
+
+        Ok(Self {
+            nul,
+            com_rand,
+            callback_hash,
+            new_in_progress_callback_hash,
+            old_in_progress_callback_hash,
+            is_ingest_over,
         })
     }
 }

@@ -4,16 +4,20 @@ use crate::generic::asynchr::bulletin::{
 use crate::generic::asynchr::service::ServiceProvider;
 use crate::generic::bulletin;
 use crate::generic::callbacks::CallbackCom;
-use crate::generic::object::{Com, ComVar, Nul, Time};
+use crate::generic::object::{Com, ComVar, Nul, Time, TimeVar};
 use crate::generic::user::UserData;
 use crate::impls::centralized::crypto::{PlainTikCrypto, PlainTikCryptoVar};
 use crate::util::UnitVar;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
+use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::prelude::Boolean;
 use ark_relations::r1cs::SynthesisError;
 use ark_serialize::Compress;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
+use rand::distributions::Standard;
+use rand::prelude::Distribution;
 
 pub trait DbHandle {
     type Error;
@@ -115,6 +119,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> PublicUserBul<F, U>
         extra_witness: Self::MembershipWitnessVar,
         extra_pub: Self::MembershipPubVar,
     ) -> Result<(), SynthesisError> {
+        // TODO: Check signature
         Ok(()) // CHECK SIGNATURE
     }
 }
@@ -152,6 +157,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>, D: DbHandle> UserBul<F, U> for Cent
             .unwrap();
 
         // ADD SIGNING THE OBJECT HERE
+        // TODO: Sign the object
 
         self.0
             .insert_updated_object(&object_serial, &old_nul_serial, &cb_com_list_serial, &[])
@@ -224,19 +230,21 @@ where
         self.0.has_ticket_not_been_called(&tik_serial).await
     }
     fn enforce_membership_of(
-        tikvar: PlainTikCryptoVar<F>,
+        tikvar: (PlainTikCryptoVar<F>, FpVar<F>, TimeVar<F>),
         extra_witness: Self::MembershipWitnessVar,
         extra_pub: Self::MembershipPubVar,
-    ) -> Result<(), SynthesisError> {
-        Ok(())
+    ) -> Result<Boolean<F>, SynthesisError> {
+        // TODO: membership of callback (signature)
+        Ok(Boolean::TRUE)
     }
 
     fn enforce_nonmembership_of(
         tikvar: PlainTikCryptoVar<F>,
         extra_witness: Self::NonMembershipWitnessVar,
         extra_pub: Self::NonMembershipPubVar,
-    ) -> Result<(), SynthesisError> {
-        Ok(())
+    ) -> Result<Boolean<F>, SynthesisError> {
+        // TODO: Nonmembership (time signature)
+        Ok(Boolean::FALSE)
     }
 }
 
@@ -245,7 +253,7 @@ where
     rand::distributions::Standard: rand::distributions::Distribution<F>,
 {
     async fn has_never_recieved_tik(&self, _tik: &PlainTikCrypto<F>) -> bool {
-        true
+        true // TODO: basically do all the ones below
     }
 
     async fn append_value(
@@ -267,18 +275,15 @@ where
     }
 }
 
-impl<D: DbHandle> ServiceProvider for CentralObjectStore<D> {
+impl<D: DbHandle, F: PrimeField + Absorb> ServiceProvider<F, F, PlainTikCrypto<F>>
+    for CentralObjectStore<D>
+where
+    Standard: Distribution<F>,
+{
     type InteractionData = u64;
     type Error = D::Error;
 
-    async fn has_never_recieved_tik<
-        F: PrimeField + Absorb,
-        Args: Clone,
-        Crypto: crate::crypto::enc::AECipherSigZK<F, Args>,
-    >(
-        &self,
-        ticket: Crypto::SigPK,
-    ) -> bool {
+    async fn has_never_recieved_tik(&self, ticket: PlainTikCrypto<F>) -> bool {
         let mut tik_serial = Vec::new();
         ticket
             .serialize_with_mode(&mut tik_serial, Compress::Yes)
@@ -286,16 +291,9 @@ impl<D: DbHandle> ServiceProvider for CentralObjectStore<D> {
         self.0.has_never_recieved_tik(&tik_serial).await
     }
 
-    async fn store_interaction<
-        F: PrimeField + Absorb,
-        U: UserData<F>,
-        Snark: SNARK<F>,
-        Args: Clone + ark_ff::ToConstraintField<F>,
-        Crypto: crate::crypto::enc::AECipherSigZK<F, Args>,
-        const NUMCBS: usize,
-    >(
-        &self,
-        interaction: crate::generic::user::ExecutedMethod<F, Snark, Args, Crypto, NUMCBS>,
+    async fn store_interaction<U: UserData<F>, Snark: SNARK<F>, const NUMCBS: usize>(
+        &mut self,
+        interaction: crate::generic::user::ExecutedMethod<F, Snark, F, PlainTikCrypto<F>, NUMCBS>,
         data: u64,
     ) -> Result<(), Self::Error> {
         let mut tickets = Vec::new();
@@ -330,8 +328,7 @@ impl<D: DbHandle> CentralObjectStore<D> {
             ark_serialize::Validate::No,
         )
         .unwrap();
-        let called =
-            self.call::<F, F, PlainTikCrypto<F>, Self>(cc, arguments, PlainTikCrypto(F::zero()))?;
+        let called = self.call::<Self>(cc, arguments, PlainTikCrypto(F::zero()))?;
 
         self.verify_call_and_append(called.0, called.1, ())
             .await
@@ -342,6 +339,7 @@ impl<D: DbHandle> CentralObjectStore<D> {
     }
 }
 
+// TODO: do the same things with the DB handle for the network handle
 pub trait NetworkHandle {
     type Error;
 
@@ -440,18 +438,18 @@ where
     }
 
     fn enforce_membership_of(
-        tikvar: PlainTikCryptoVar<F>,
+        tikvar: (PlainTikCryptoVar<F>, FpVar<F>, TimeVar<F>),
         extra_witness: Self::MembershipWitnessVar,
         extra_pub: Self::MembershipPubVar,
-    ) -> Result<(), SynthesisError> {
-        Ok(())
+    ) -> Result<Boolean<F>, SynthesisError> {
+        Ok(Boolean::TRUE)
     }
 
     fn enforce_nonmembership_of(
         tikvar: PlainTikCryptoVar<F>,
         extra_witness: Self::NonMembershipWitnessVar,
         extra_pub: Self::NonMembershipPubVar,
-    ) -> Result<(), SynthesisError> {
-        Ok(())
+    ) -> Result<Boolean<F>, SynthesisError> {
+        Ok(Boolean::FALSE)
     }
 }

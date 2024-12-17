@@ -4,11 +4,11 @@ use ark_crypto_primitives::sponge::poseidon::{
 };
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
+use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::prelude::AllocVar;
 use ark_r1cs_std::prelude::AllocationMode;
 use ark_r1cs_std::R1CSVar;
-use ark_r1cs_std::ToConstraintFieldGadget;
 use ark_relations::r1cs::ConstraintSystemRef;
 use ark_relations::r1cs::Field;
 use ark_relations::r1cs::Namespace;

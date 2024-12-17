@@ -1,11 +1,12 @@
-use crate::crypto::enc::AECipherSigZK;
+use crate::crypto::enc::{AECipherSigZK, CPACipher};
 use crate::crypto::rr::RRVerifier;
-use crate::generic::object::{Com, ComVar, Nul, Time};
+use crate::generic::object::{Com, ComVar, Nul, Time, TimeVar};
 use crate::generic::user::UserData;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_ff::ToConstraintField;
-use ark_r1cs_std::prelude::AllocVar;
+use ark_r1cs_std::eq::EqGadget;
+use ark_r1cs_std::prelude::{AllocVar, Boolean};
 use ark_relations::r1cs::SynthesisError;
 use ark_snark::SNARK;
 
@@ -149,16 +150,35 @@ pub trait PublicCallbackBul<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<
     async fn verify_not_in(&self, tik: Crypto::SigPK) -> bool;
 
     fn enforce_membership_of(
-        tikvar: Crypto::SigPKV,
+        tikvar: (
+            Crypto::SigPKV,
+            <Crypto::EncKey as CPACipher<F>>::CV,
+            TimeVar<F>,
+        ),
         extra_witness: Self::MembershipWitnessVar,
         extra_pub: Self::MembershipPubVar,
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<Boolean<F>, SynthesisError>;
 
     fn enforce_nonmembership_of(
         tikvar: Crypto::SigPKV,
         extra_witness: Self::NonMembershipWitnessVar,
         extra_pub: Self::NonMembershipPubVar,
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<Boolean<F>, SynthesisError>;
+
+    fn enforce_memb_nmemb(
+        tikvar: (
+            Crypto::SigPKV,
+            <Crypto::EncKey as CPACipher<F>>::CV,
+            TimeVar<F>,
+        ),
+        ewitness: (Self::MembershipWitnessVar, Self::NonMembershipWitnessVar),
+        epub: (Self::MembershipPubVar, Self::NonMembershipPubVar),
+    ) -> Result<Boolean<F>, SynthesisError> {
+        let b2 = Self::enforce_nonmembership_of(tikvar.0.clone(), ewitness.1, epub.1)?;
+        let b1 = Self::enforce_membership_of(tikvar, ewitness.0, epub.0)?;
+        let _ = b1.is_neq(&b2)?;
+        Ok(b1)
+    }
 }
 
 pub trait CallbackBulletin<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<F, CBArgs>>:

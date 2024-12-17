@@ -3,14 +3,14 @@ use ark_bls12_381::Fr;
 use ark_bn254::Fr as F;
 use ark_ff::ToConstraintField;
 use ark_r1cs_std::boolean::Boolean;
+use ark_r1cs_std::convert::ToBytesGadget;
+use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::uint128::UInt128;
 use ark_r1cs_std::uint16::UInt16;
 use ark_r1cs_std::uint32::UInt32;
 use ark_r1cs_std::uint64::UInt64;
 use ark_r1cs_std::uint8::UInt8;
-use ark_r1cs_std::ToBytesGadget;
-use ark_r1cs_std::ToConstraintFieldGadget;
 use ark_relations::r1cs::SynthesisError;
 
 macro_rules! impl_userdata {
@@ -55,7 +55,7 @@ impl UserData<F> for u8 {
     ) -> Result<Vec<crate::generic::object::SerVar<F>>, SynthesisError> {
         let mut buf: Vec<FpVar<F>> = Vec::new();
         let v = [user_var; 1];
-        let bytevec = &v.to_bytes()?;
+        let bytevec = &v.to_bytes_le()?;
         let ser_vec = bytevec.to_constraint_field()?;
         buf.extend_from_slice(&ser_vec);
         Ok(buf)
@@ -76,7 +76,7 @@ impl UserData<Fr> for u8 {
     ) -> Result<Vec<crate::generic::object::SerVar<Fr>>, SynthesisError> {
         let mut buf: Vec<FpVar<Fr>> = Vec::new();
         let v = [user_var; 1];
-        let bytevec = &v.to_bytes()?;
+        let bytevec = &v.to_bytes_le()?;
         let ser_vec = bytevec.to_constraint_field()?;
         buf.extend_from_slice(&ser_vec);
         Ok(buf)
@@ -98,7 +98,7 @@ macro_rules! impl_complex_userdata {
                 user_var: Self::UserDataVar,
             ) -> Result<Vec<crate::generic::object::SerVar<$f>>, SynthesisError> {
                 let mut buf: Vec<FpVar<$f>> = Vec::new();
-                let boolvec = &user_var.to_bytes();
+                let boolvec = &user_var.to_bytes_le();
                 let ser_vec = boolvec
                     .into_iter()
                     .flat_map(|x| x.to_constraint_field())
