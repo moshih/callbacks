@@ -355,7 +355,7 @@ where
     }
 
     fn external_inputs_len(&self) -> usize {
-        U::repr_len() + <PrivScanArgs<F, CBArgs, Crypto, CBul, 1>>::repr_len()
+        User::<F, U>::repr_len() + <PrivScanArgs<F, CBArgs, Crypto, CBul, 1>>::repr_len()
     }
 
     fn step_native(
@@ -366,9 +366,9 @@ where
         _z_i: Vec<F>,
         external_inputs: Vec<F>, // inputs that are not part of the state
     ) -> Result<Vec<F>, folding_schemes::Error> {
-        let u = User::<F, U>::from_fold_repr(&external_inputs[0..U::repr_len()]);
+        let u = User::<F, U>::from_fold_repr(&external_inputs[0..User::<F, U>::repr_len()]);
         let priv_args = <PrivScanArgs<F, CBArgs, Crypto, CBul, 1>>::from_fold_repr(
-            &external_inputs[U::repr_len()..],
+            &external_inputs[User::<F, U>::repr_len()..],
         );
         let new_user = scan_method::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, 1>(
             &u,
@@ -387,10 +387,10 @@ where
         z_i: Vec<ark_r1cs_std::fields::fp::FpVar<F>>,
         external_inputs: Vec<ark_r1cs_std::fields::fp::FpVar<F>>, // inputs that are not part of the state
     ) -> Result<Vec<ark_r1cs_std::fields::fp::FpVar<F>>, ark_relations::r1cs::SynthesisError> {
-        let u = User::<F, U>::from_fold_repr_zk(&external_inputs[0..U::repr_len()])?;
+        let u = User::<F, U>::from_fold_repr_zk(&external_inputs[0..User::<F, U>::repr_len()])?;
         User::commit_in_zk::<H>(u.clone())?.enforce_equal(&z_i[0])?;
         let priv_args = <PrivScanArgs<F, CBArgs, Crypto, CBul, 1>>::from_fold_repr_zk(
-            &external_inputs[U::repr_len()..],
+            &external_inputs[User::<F, U>::repr_len()..],
         )?;
         let p = PubScanArgsVar::new_constant(cs.clone(), self.const_args.clone())?;
         let new_user =

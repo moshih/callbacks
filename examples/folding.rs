@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use ark_bn254::{constraints::GVar, G1Projective as Projective};
 use ark_bn254::{Bn254 as E, Fr as F};
 use ark_groth16::Groth16;
@@ -387,9 +389,19 @@ fn main() {
 
     let mut folding_scheme = NF::init(&nova_params, f_circ, init_state.clone()).unwrap();
 
+    let start = SystemTime::now();
+
     folding_scheme
         .prove_step(rng, [u.to_fold_repr(), prs1.to_fold_repr()].concat(), None)
         .unwrap();
+
+    println!("Fold step time: {:?}", start.elapsed().unwrap());
+
+    let start = SystemTime::now();
+
+    let _proof = folding_scheme.ivc_proof();
+
+    println!("Finalizing proof time: {:?}", start.elapsed().unwrap());
 
     // println!("User at the end : {:?}", u);
 }

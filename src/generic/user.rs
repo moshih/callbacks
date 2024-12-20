@@ -44,7 +44,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>> std::fmt::Octal for User<F, U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[U: {} callbacks, ingesting: {} ]",
+            "[U: {} callbacks, ingesting: {}]",
             self.callbacks.len(),
             !self.zk_fields.is_ingest_over
         )

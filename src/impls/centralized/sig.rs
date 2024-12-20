@@ -6,6 +6,7 @@ use crate::generic::bulletin::{
     CallbackBulletin, JoinableBulletin, PublicCallbackBul, PublicUserBul, UserBul,
 };
 use crate::generic::callbacks::CallbackCom;
+#[cfg(feature = "folding")]
 use crate::generic::fold::FoldSer;
 use crate::generic::object::{Com, Nul, Time, TimeVar};
 use crate::generic::service::ServiceProvider;
