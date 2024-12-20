@@ -32,6 +32,7 @@ fn derive_userdata_and_zk(
     TokenStream,
     TokenStream,
     TokenStream,
+    TokenStream,
 ) {
     match *data {
         Data::Struct(ref data) => match data.fields {
@@ -67,6 +68,14 @@ fn derive_userdata_and_zk(
                     }
                 });
 
+                let eq_gadget = fields.named.iter().map(|f| {
+                    let name = &f.ident;
+                    let ty = &f.ty;
+                    quote_spanned! {f.span() =>
+                        b = b & <<#ty as zk_callbacks::generic::user::UserData<#ft>>::UserDataVar as ark_r1cs_std::eq::EqGadget<#ft>>::is_eq(&self.#name, &other.#name)?;
+                    }
+                });
+
                 let zk_names = fields.named.iter().map(|f| {
                     let name = &f.ident;
                     quote_spanned! {f.span() => #name }
@@ -99,6 +108,9 @@ fn derive_userdata_and_zk(
                     },
                     quote! {
                         #(#field_cond_select;)*
+                    },
+                    quote! {
+                        #(#eq_gadget;)*
                     },
                 )
             }
@@ -152,7 +164,7 @@ pub fn zk_object(
     let generics = add_trait_bounds(ast.generics.clone(), &field_type);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let (s1, s2, fields, zk_names, alloc, _fcond) =
+    let (s1, s2, fields, zk_names, alloc, _fcond, _eq) =
         derive_userdata_and_zk(&ast.data, field_type.clone());
     let tok = match noalloc {
         Some(t) => {
@@ -265,7 +277,7 @@ pub fn scannable_zk_object(
     let generics = add_trait_bounds(ast.generics.clone(), &field_type);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let (s1, s2, fields, zk_names, alloc, fp_cond) =
+    let (s1, s2, fields, zk_names, alloc, fp_cond, eqg) =
         derive_userdata_and_zk(&ast.data, field_type.clone());
     let tok = match noalloc {
         Some(t) => {
@@ -300,6 +312,14 @@ pub fn scannable_zk_object(
                 #[derive(Clone)]
                 pub struct #zk_var_name {
                     #fields
+                }
+
+                impl #impl_generics ark_r1cs_std::eq::EqGadget<#field_type> for #zk_var_name {
+                    fn is_eq(&self, other: &Self) -> Result<ark_r1cs_std::boolean::Boolean<#field_type>, ark_relations::r1cs::SynthesisError> {
+                        let mut b = ark_r1cs_std::boolean::Boolean::TRUE;
+                        #eqg
+                        Ok(b)
+                    }
                 }
 
                 impl #impl_generics ark_r1cs_std::select::CondSelectGadget<#field_type> for #zk_var_name {

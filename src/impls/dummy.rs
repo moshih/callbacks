@@ -57,7 +57,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>> UserBul<F, U> for DummyStore {
         _cb_com_list: [crate::generic::object::Com<F>; NUMCBS],
         _args: Args,
         _proof: Snark::Proof,
-        _memb_data: Self::MembershipPub,
+        _memb_data: Option<Self::MembershipPub>,
         _verif_key: &Snark::VerifyingKey,
     ) -> Result<(), Self::Error> {
         Ok(())
@@ -134,6 +134,7 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
         _tik: <Crypto as AECipherSigZK<F, Args>>::SigPK,
         _enc_args: <Crypto as AECipherSigZK<F, Args>>::Ct,
         _sig: <Crypto as AECipherSigZK<F, Args>>::Sig,
+        _time: Time<F>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }

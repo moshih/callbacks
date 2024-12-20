@@ -1,0 +1,79 @@
+[SERVER] INIT...
+	 (time) Generated data structures: 9.765723751s
+[SERVER] PROOF KEY GENERATION...
+	 (time) Generated proof keys: 5.521258474s
+[SERVER] Init done! 
+
+
+[USER] Creation... 
+[USER] Created! User: [U: 0 callbacks, ingesting: false ]
+[USER] joined! 
+
+
+[USER] Generating proof... 
+Constraints for proving statement + in storage: 18823
+	 (time) Generated proof in + statement: 1.726871816s
+[USER] Proof generated! 
+
+
+[SERVER] Verifying proof... 
+	 (time) Verified proof: 3.959508ms
+[SERVER] Verified proof Output: true 
+
+
+[USER] Interacting (proving)...
+Constraints for interaction: 20479
+	 (time) Interaction (proving) time: 1.785373526s
+[USER] Executed interaction! New user: [U: 1 callbacks, ingesting: false ] 
+
+
+[BULLETIN / SERVER] Verifying and storing...
+	 (time) Verify + append: 121.286255ms
+	 (time) Verify + store interaction: 20.930787ms
+[BULLETIN] Checked proof and stored user... Output: ()
+[SERVER] Checking proof and storing interaction... Output: () 
+
+
+[USER] Interacting (proving)...
+Constraints for interaction: 20479
+	 (time) Interaction (proving) time: 1.707997434s
+[USER] Executed interaction! New user: [U: 2 callbacks, ingesting: false ] 
+
+
+[BULLETIN / SERVER] Verifying and storing...
+	 (time) Verify + append: 120.391837ms
+	 (time) Verify + store interaction: 21.962821ms
+[BULLETIN] Checking proof and storing new user... Output: ()
+[SERVER] Checking proof and storing interaction... Output: () 
+
+
+[USER] Scanning a ticket... 
+Constraints for interaction: 56731
+	 (time) Scanning (interaction proving) time: 5.595837399s
+[USER] Scanned single ticket... [U: 2 callbacks, ingesting: true ] 
+
+
+[BULLETIN / SERVER] Verifying and storing scan...
+	 (time) Verify + append: 157.296392ms
+	 (time) Verify + store scan: 53.421388ms
+[BULLETIN] Checking proof and storing new user... Output: ()
+[SERVER] Checking proof for first scan... Output: () 
+
+
+[SERVER] Calling *the second callback*... 
+[SERVER] Called!... 
+
+
+[USER] Scanning the second ticket... 
+Constraints for interaction: 56731
+	 (time) Scanning time: 5.274091593s
+[USER] Scanning the second ticket... [U: 2 callbacks, ingesting: false ] 
+
+
+[BULLETIN / SERVER] Verifying and storing scan...
+	 (time) Verify + append: 154.655482ms
+	 (time) Verify + store scan: 52.943848ms
+[BULLETIN] Checking proof and storing new user... Output: ()
+[SERVER] Checking proof for second scan... Output: () 
+
+

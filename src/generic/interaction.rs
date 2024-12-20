@@ -41,6 +41,14 @@ pub struct Callback<F: PrimeField + Absorb, U: UserData<F>, Args, ArgsVar: Alloc
     pub predicate: NoPrivPredicate<UserVar<F, U>, ArgsVar>,
 }
 
+impl<F: PrimeField + Absorb, U: UserData<F>, Args, ArgsVar: AllocVar<Args, F>> std::fmt::Debug
+    for Callback<F, U, Args, ArgsVar>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Callback: {}", self.method_id)
+    }
+}
+
 pub type CallbackList<F, U, A, X, const N: usize> = [Callback<F, U, A, X>; N];
 pub type MethProof<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> = (
     Method<User<F, U>, PubArgs, PrivArgs>,
@@ -85,6 +93,8 @@ where
     >(
         &self,
         rng: &mut (impl CryptoRng + RngCore),
+        memb_data: Option<Bul::MembershipPub>,
+        aux_data: Option<PubArgs>,
         is_scan: bool,
     ) -> (Snark::ProvingKey, Snark::VerifyingKey) {
         let u = User::create(U::default(), rng);
@@ -116,10 +126,11 @@ where
             pub_new_com: u.commit::<H>(),
             pub_old_nul: u.zk_fields.nul,
             pub_issued_callback_coms: cbs.map(|x| x.commit::<H>()),
-            pub_args: PubArgs::default(),
+            pub_args: aux_data.unwrap_or_default(),
             associated_method: x,
             is_scan,
-            pub_bul_membership_data: Bul::MembershipPub::default(),
+            bul_memb_is_const: memb_data.is_some(),
+            pub_bul_membership_data: memb_data.unwrap_or_default(),
             _phantom_hash: PhantomData,
         };
         Snark::circuit_specific_setup(out, rng).unwrap()
@@ -153,6 +164,7 @@ pub(crate) struct ExecMethodCircuit<
     pub pub_issued_callback_coms: [Com<F>; NUMCBS],
     pub pub_args: PubArgs,
     pub pub_bul_membership_data: Bul::MembershipPub,
+    pub bul_memb_is_const: bool,
 
     pub associated_method:
         Interaction<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, NUMCBS>,
@@ -211,9 +223,12 @@ impl<
                 Ok(&self.pub_issued_callback_coms)
             })?;
 
-        let pub_bul_data = Bul::MembershipPubVar::new_input(ns!(cs, "pub_bul_data"), || {
-            Ok(&self.pub_bul_membership_data)
-        })?;
+        let pub_bul_data = match self.bul_memb_is_const {
+            true => Bul::MembershipPubVar::new_constant(cs.clone(), &self.pub_bul_membership_data)?,
+            false => Bul::MembershipPubVar::new_input(ns!(cs, "pub_bul_data"), || {
+                Ok(&self.pub_bul_membership_data)
+            })?,
+        };
 
         // Enforce old_user in bulletin
         Bul::enforce_membership_of(
@@ -327,6 +342,7 @@ impl<
             pub_issued_callback_coms: self.pub_issued_callback_coms,
             pub_args: self.pub_args.clone(),
             pub_bul_membership_data: self.pub_bul_membership_data.clone(),
+            bul_memb_is_const: self.bul_memb_is_const,
 
             is_scan: self.is_scan,
             associated_method: self.associated_method.clone(),
@@ -345,8 +361,9 @@ pub fn generate_keys_for_statement<
     PrivArgsVar: AllocVar<PrivArgs, F>,
     Snark: SNARK<F>,
 >(
-    pred: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
     rng: &mut (impl CryptoRng + RngCore),
+    pred: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+    aux_data: Option<PubArgs>,
 ) -> (Snark::ProvingKey, Snark::VerifyingKey)
 where
     Standard: Distribution<F>,
@@ -355,7 +372,7 @@ where
     let out = ProvePredicateCircuit {
         priv_user: u.clone(),
         pub_com: u.commit::<H>(),
-        pub_args: PubArgs::default(),
+        pub_args: aux_data.unwrap_or_default(),
         priv_args: PrivArgs::default(),
         associated_method: pred,
     };
@@ -418,8 +435,11 @@ pub fn generate_keys_for_statement_in<
     Snark: SNARK<F>,
     Bul: PublicUserBul<F, U>,
 >(
-    pred: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
     rng: &mut (impl CryptoRng + RngCore),
+    pred: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+    memb_data: Option<Bul::MembershipPub>,
+
+    aux_data: Option<PubArgs>,
 ) -> (Snark::ProvingKey, Snark::VerifyingKey)
 where
     Standard: Distribution<F>,
@@ -429,9 +449,10 @@ where
         ProvePredInCircuit {
             priv_user: u.clone(),
             priv_extra_membership_data: Bul::MembershipWitness::default(),
-            pub_args: PubArgs::default(),
+            pub_args: aux_data.unwrap_or_default(),
             priv_args: PrivArgs::default(),
-            pub_extra_membership_data: Bul::MembershipPub::default(),
+            bul_memb_is_const: memb_data.is_some(),
+            pub_extra_membership_data: memb_data.unwrap_or_default(),
             associated_method: pred,
 
             _phantom_hash: PhantomData,
@@ -457,6 +478,7 @@ pub(crate) struct ProvePredInCircuit<
     // Public
     pub pub_args: PubArgs,
     pub pub_extra_membership_data: Bul::MembershipPub,
+    pub bul_memb_is_const: bool,
     pub associated_method: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
 
     pub _phantom_hash: PhantomData<H>,
@@ -480,6 +502,7 @@ impl<
             priv_args: self.priv_args.clone(),
             pub_args: self.pub_args.clone(),
             pub_extra_membership_data: self.pub_extra_membership_data.clone(),
+            bul_memb_is_const: self.bul_memb_is_const,
             associated_method: self.associated_method,
             _phantom_hash: self._phantom_hash,
         }
@@ -509,10 +532,14 @@ impl<
 
         let pub_args_var = PubArgsVar::new_input(ns!(cs, "pub_args"), || Ok(&self.pub_args))?;
 
-        let pub_data_for_membership =
-            Bul::MembershipPubVar::new_input(ns!(cs, "pub_data"), || {
-                Ok(self.pub_extra_membership_data)
-            })?;
+        let pub_data_for_membership = match self.bul_memb_is_const {
+            true => {
+                Bul::MembershipPubVar::new_constant(cs.clone(), &self.pub_extra_membership_data)?
+            }
+            false => Bul::MembershipPubVar::new_input(ns!(cs, "pub_bul_data"), || {
+                Ok(&self.pub_extra_membership_data)
+            })?,
+        };
 
         let com = User::commit_in_zk::<H>(user_var.clone())?;
 
@@ -529,93 +556,3 @@ impl<
         Ok(())
     }
 }
-
-// pub(crate) struct ScanNCircuit<
-//     F: PrimeField + Absorb,
-//     H: FieldHash<F>,
-//     U: UserData<F>,
-//     Args: Clone,
-//     Bul: PublicUserBul<F, U>,
-//     Crypto: AECipherSigZK<F, Args>,
-//     CBul: PublicCallbackBul<F, Args, Crypto>,
-//     const NUMCBS: usize,
-// > {
-//     // Private
-//     pub priv_old_user: User<F, U>,
-//     pub priv_new_user: User<F, U>,
-//     pub priv_bul_membership_witness: Bul::MembershipWitness,
-//
-//     pub priv_n_tickets: [CallbackCom<F, Args, Crypto>; NUMCBS],
-//     pub priv_extra_cb_membership_data: CBul::MembershipWitness,
-//     pub priv_extra_cb_nonmembership_data: CBul::NonMembershipWitness,
-//
-//     // Public
-//     pub pub_new_com: Com<F>,
-//     pub pub_old_nul: Nul<F>,
-//     pub pub_bul_membership_data: Bul::MembershipPub,
-//     pub pub_extra_cb_membership_data: CBul::MembershipPub,
-//     pub pub_extra_cb_nonmembership_data: CBul::NonMembershipPub,
-//
-//     pub _phantom_hash: PhantomData<H>,
-// }
-//
-// impl<
-//         F: PrimeField + Absorb,
-//         H: FieldHash<F>,
-//         U: UserData<F>,
-//         Args: Clone,
-//         Bul: PublicUserBul<F, U>,
-//         Crypto: AECipherSigZK<F, Args>,
-//         CBul: PublicCallbackBul<F, Args, Crypto>,
-//         const NUMCBS: usize,
-//     > ConstraintSynthesizer<F> for ScanNCircuit<F, H, U, Args, Bul, Crypto, CBul, NUMCBS>
-// {
-//     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> ark_relations::r1cs::Result<()> {
-//         let old_user_var = UserVar::new_witness(ns!(cs, "old_user"), || Ok(self.priv_old_user))?;
-//         let new_user_var = UserVar::new_witness(ns!(cs, "new_user"), || Ok(self.priv_new_user))?;
-//         let priv_bul_witness =
-//             Bul::MembershipWitnessVar::new_witness(ns!(cs, "priv_bul_witness"), || {
-//                 Ok(&self.priv_bul_membership_witness)
-//             })?;
-//
-//         let priv_cbul_memb_witness =
-//             CBul::MembershipWitnessVar::new_witness(ns!(cs, "priv_cbul_memb_witness"), || {
-//                 Ok(&self.priv_extra_cb_membership_data)
-//             })?;
-//
-//         let priv_cbul_nonmemb_witness = CBul::NonMembershipWitnessVar::new_witness(
-//             ns!(cs, "priv_cbul_nonmemb_witness"),
-//             || Ok(&self.priv_extra_cb_nonmembership_data),
-//         )?;
-//
-//         let sweeping_tickets: ArrayVar<CallbackComVar<F, Args, Crypto>, NUMCBS> =
-//             ArrayVar::new_witness(ns!(cs, "issued_cbs"), || Ok(&self.priv_n_tickets))?;
-//
-//         // Create public variables
-//         let new_com_var = ComVar::new_input(ns!(cs, "new_com"), || Ok(&self.pub_new_com))?;
-//         let old_nul_var = NulVar::new_input(ns!(cs, "old_nul"), || Ok(&self.pub_old_nul))?;
-//
-//         let pub_bul_data = Bul::MembershipPubVar::new_witness(ns!(cs, "pub_bul_data"), || {
-//             Ok(&self.pub_bul_membership_data)
-//         })?;
-//
-//         let pub_cbul_memb_data =
-//             CBul::MembershipPubVar::new_witness(ns!(cs, "pub_cbul_memb_data"), || {
-//                 Ok(&self.pub_extra_cb_membership_data)
-//             })?;
-//
-//         let pub_cbul_nonmemb_data =
-//             CBul::NonMembershipPubVar::new_witness(ns!(cs, "pub_cbul_nonmemb_data"), || {
-//                 Ok(&self.pub_extra_cb_nonmembership_data)
-//             })?;
-//
-//         // Enforce old_user in bulletin
-//         Bul::enforce_membership_of(
-//             User::commit_in_zk::<H>(old_user_var.clone())?,
-//             priv_bul_witness,
-//             pub_bul_data,
-//         )?;
-//
-//         Ok(())
-//     }
-// }

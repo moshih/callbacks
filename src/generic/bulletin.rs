@@ -56,7 +56,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         cb_com_list: [Com<F>; NUMCBS],
         args: PubArgs,
         proof: Snark::Proof,
-        memb_data: Self::MembershipPub, // membership for the PREVIOUS object, meant to verify the proof: NOT membership for current object
+        memb_data: Option<Self::MembershipPub>, // membership for the PREVIOUS object, meant to verify the proof: NOT membership for current object
         verif_key: &Snark::VerifyingKey,
     ) -> Result<(), Self::Error>;
 
@@ -68,7 +68,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         args: PubArgs,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
-        memb_data: Self::MembershipPub,
+        memb_data: Option<Self::MembershipPub>,
         verif_key: &Snark::VerifyingKey,
     ) -> bool {
         if !self.has_never_recieved_nul(&old_nul) {
@@ -78,7 +78,9 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         let mut pub_inputs = vec![object, old_nul];
         pub_inputs.extend::<Vec<F>>(args.to_field_elements().unwrap());
         pub_inputs.extend::<Vec<F>>(cb_com_list.to_field_elements().unwrap());
-        pub_inputs.extend::<Vec<F>>(memb_data.to_field_elements().unwrap());
+        if let Some(a) = memb_data {
+            pub_inputs.extend::<Vec<F>>(a.to_field_elements().unwrap());
+        }
 
         Snark::verify(verif_key, &pub_inputs, &proof).unwrap_or(false)
     }
@@ -95,7 +97,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
         args: PubArgs,
         cb_com_list: [Com<F>; NUMCBS],
         proof: Snark::Proof,
-        memb_data: Self::MembershipPub,
+        memb_data: Option<Self::MembershipPub>,
         verif_key: &Snark::VerifyingKey,
     ) -> Result<(), BulError<Self::Error>> {
         let out = self.verify_interaction::<PubArgs, Snark, NUMCBS>(
@@ -187,6 +189,7 @@ pub trait CallbackBulletin<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<F
         tik: Crypto::SigPK,
         enc_args: Crypto::Ct,
         signature: Crypto::Sig,
+        time: Time<F>,
     ) -> Result<(), Self::Error>;
 
     fn verify_call(
@@ -206,6 +209,7 @@ pub trait CallbackBulletin<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<F
         tik: Crypto::SigPK,
         enc_args: Crypto::Ct,
         signature: Crypto::Sig,
+        time: Time<F>,
     ) -> Result<(), BulError<Self::Error>> {
         let out = self.verify_call(tik.clone(), enc_args.clone(), signature.clone());
 
@@ -213,7 +217,7 @@ pub trait CallbackBulletin<F: PrimeField, CBArgs: Clone, Crypto: AECipherSigZK<F
             return Err(BulError::VerifyError);
         }
 
-        self.append_value(tik, enc_args, signature)
+        self.append_value(tik, enc_args, signature, time)
             .map_err(BulError::AppendError)?;
 
         Ok(())

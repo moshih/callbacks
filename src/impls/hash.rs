@@ -7,7 +7,7 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::SynthesisError;
 
-#[cfg(feature = "circom_poseidon")]
+#[cfg(feature = "circposeidon")]
 use circom_poseidon::get_poseidon_params;
 
 #[derive(Clone)]
@@ -33,11 +33,11 @@ impl<F: PrimeField + Absorb, const R: usize> HasherZK<F> for Poseidon<R> {
 
 impl<F: PrimeField + Absorb, const R: usize> FieldHash<F> for Poseidon<R> {}
 
-#[cfg(feature = "circom_poseidon")]
+#[cfg(feature = "circposeidon")]
 #[derive(Clone)]
 pub struct CircPoseidon<const R: usize>();
 
-#[cfg(feature = "circom_poseidon")]
+#[cfg(feature = "circposeidon")]
 impl<F: PrimeField + Absorb, const R: usize> HasherZK<F> for CircPoseidon<R> {
     type M = F;
     type C = F;
@@ -56,5 +56,5 @@ impl<F: PrimeField + Absorb, const R: usize> HasherZK<F> for CircPoseidon<R> {
     }
 }
 
-#[cfg(feature = "circom_poseidon")]
+#[cfg(feature = "circposeidon")]
 impl<F: PrimeField + Absorb, const R: usize> FieldHash<F> for CircPoseidon<R> {}

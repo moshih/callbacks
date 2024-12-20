@@ -40,6 +40,17 @@ pub struct User<F: PrimeField + Absorb, U: UserData<F>> {
     pub callbacks: Vec<Vec<u8>>,
 }
 
+impl<F: PrimeField + Absorb, U: UserData<F>> std::fmt::Octal for User<F, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[U: {} callbacks, ingesting: {} ]",
+            self.callbacks.len(),
+            !self.zk_fields.is_ingest_over
+        )
+    }
+}
+
 #[derive(Clone)]
 pub struct UserVar<F: PrimeField + Absorb, U: UserData<F>> {
     pub data: U::UserDataVar,
@@ -160,6 +171,7 @@ where
         >,
         rpks: [Crypto::SigPK; NUMCBS],
         bul_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        is_memb_data_const: bool,
         pk: &Snark::ProvingKey,
         pub_args: PubArgs,
         priv_args: PrivArgs,
@@ -246,6 +258,7 @@ where
             pub_issued_callback_coms: issued_cb_coms,
             pub_args,
             pub_bul_membership_data: bul_data.1,
+            bul_memb_is_const: is_memb_data_const,
 
             associated_method: method,
             is_scan,
@@ -335,6 +348,7 @@ where
         predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
         memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        is_memb_data_const: bool,
         pub_args: PubArgs,
         priv_args: PrivArgs,
         print_constraints: bool,
@@ -345,6 +359,7 @@ where
                 priv_extra_membership_data: memb_data.0,
                 priv_args,
                 pub_extra_membership_data: memb_data.1,
+                bul_memb_is_const: is_memb_data_const,
                 pub_args,
                 associated_method: predicate,
 

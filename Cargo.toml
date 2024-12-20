@@ -18,11 +18,14 @@ ark-r1cs-std = "0.5.0"
 ark-relations = "0.5.0"
 ark-groth16 = "0.5.0"
 rand = "0.8.5"
-ark-bn254 = "0.5.0"
+ark-bn254 = { version = "0.5.0", features = ["r1cs"] }
 ark-serialize = { version = "0.5.0", features = ["ark-serialize-derive", "derive", "std"] }
 circom_poseidon = { path = "circom-poseidon", optional = true }
-folding-schemes = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "folding-schemes" }
+folding-schemes = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "folding-schemes", optional = true }
 nalgebra = "0.33.2"
+ark-grumpkin = { version = "0.5.0", features = ["r1cs"] }
 
 [features]
 asynchr = []
+circposeidon = ["dep:circom_poseidon"]
+folding = ["dep:folding-schemes"]
