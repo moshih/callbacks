@@ -788,7 +788,7 @@ where
         PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
     >(
-        &mut self,
+        &self,
         rng: &mut (impl CryptoRng + RngCore),
         predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
@@ -834,7 +834,7 @@ where
         Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
     >(
-        &mut self,
+        &self,
         rng: &mut (impl CryptoRng + RngCore),
         predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
         pk: &Snark::ProvingKey,
