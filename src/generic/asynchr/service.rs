@@ -1,13 +1,13 @@
-use crate::crypto::enc::AECipherSigZK;
-use crate::crypto::rr::RRSigner;
-use crate::generic::asynchr::bulletin::BulError;
-use crate::generic::asynchr::bulletin::PublicUserBul;
-use crate::generic::callbacks::CallbackCom;
-use crate::generic::user::ExecutedMethod;
-use crate::generic::user::UserData;
+use crate::{
+    crypto::{enc::AECipherSigZK, rr::RRSigner},
+    generic::{
+        asynchr::bulletin::{BulError, PublicUserBul},
+        callbacks::CallbackCom,
+        user::{ExecutedMethod, UserData},
+    },
+};
 use ark_crypto_primitives::sponge::Absorb;
-use ark_ff::PrimeField;
-use ark_ff::ToConstraintField;
+use ark_ff::{PrimeField, ToConstraintField};
 use ark_snark::SNARK;
 
 type Called<F, A, Crypto> = (

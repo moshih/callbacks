@@ -1,18 +1,12 @@
-use crate::generic::user::UserData;
 use ark_crypto_primitives::sponge::poseidon::{
     find_poseidon_ark_and_mds, PoseidonConfig, PoseidonDefaultConfigEntry,
 };
-use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use ark_r1cs_std::convert::ToConstraintFieldGadget;
-use ark_r1cs_std::fields::fp::FpVar;
-use ark_r1cs_std::prelude::AllocVar;
-use ark_r1cs_std::prelude::AllocationMode;
-use ark_r1cs_std::R1CSVar;
-use ark_relations::r1cs::ConstraintSystemRef;
-use ark_relations::r1cs::Field;
-use ark_relations::r1cs::Namespace;
-use ark_relations::r1cs::SynthesisError;
+use ark_r1cs_std::{
+    prelude::{AllocVar, AllocationMode},
+    R1CSVar,
+};
+use ark_relations::r1cs::{ConstraintSystemRef, Field, Namespace, SynthesisError};
 use core::borrow::Borrow;
 
 // Generates Poseidon params for BLS12-381. This is copied from
@@ -71,53 +65,8 @@ pub(crate) fn gen_poseidon_params<F: PrimeField>(
     // F::get_default_poseidon_parameters(rate, optimized_for_weights).unwrap()
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UnitVar(pub ());
-
-impl<F: Field> R1CSVar<F> for UnitVar {
-    type Value = UnitVar;
-
-    fn cs(&self) -> ark_relations::r1cs::ConstraintSystemRef<F> {
-        ConstraintSystemRef::None
-    }
-
-    fn value(&self) -> Result<Self::Value, ark_relations::r1cs::SynthesisError> {
-        Ok(UnitVar(()))
-    }
-}
-
-impl<F: Field> AllocVar<(), F> for UnitVar {
-    fn new_variable<T: Borrow<()>>(
-        _cs: impl Into<Namespace<F>>,
-        _f: impl FnOnce() -> Result<T, SynthesisError>,
-        _mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        Ok(UnitVar(()))
-    }
-}
-
-impl<F: PrimeField + Absorb> UserData<F> for () {
-    type UserDataVar = UnitVar;
-
-    fn serialize_elements(&self) -> Vec<crate::generic::object::Ser<F>> {
-        vec![F::zero()]
-    }
-
-    fn serialize_in_zk(
-        _t: Self::UserDataVar,
-    ) -> Result<Vec<crate::generic::object::SerVar<F>>, SynthesisError> {
-        Ok(vec![FpVar::Constant(F::zero())])
-    }
-}
-
-impl<F: PrimeField> ToConstraintFieldGadget<F> for UnitVar {
-    fn to_constraint_field(&self) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        Ok(vec![FpVar::Constant(F::zero())])
-    }
-}
-
 #[derive(Clone)]
-pub struct ArrayVar<T, const N: usize>(pub [T; N]);
+pub(crate) struct ArrayVar<T, const N: usize>(pub [T; N]);
 
 impl<F: Field, T: R1CSVar<F>, const N: usize> R1CSVar<F> for ArrayVar<T, N> {
     type Value = [T::Value; N];

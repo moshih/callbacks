@@ -1,15 +1,16 @@
-use ark_ff::PrimeField;
-use ark_ff::ToConstraintField;
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::alloc::AllocationMode;
-use ark_r1cs_std::boolean::Boolean;
-use ark_r1cs_std::convert::ToConstraintFieldGadget;
-use ark_r1cs_std::fields::fp::FpVar;
-use ark_r1cs_std::select::CondSelectGadget;
-use ark_r1cs_std::R1CSVar;
-use ark_relations::ns;
-use ark_relations::r1cs::Namespace;
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_ff::{PrimeField, ToConstraintField};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    boolean::Boolean,
+    convert::ToConstraintFieldGadget,
+    fields::fp::FpVar,
+    select::CondSelectGadget,
+    R1CSVar,
+};
+use ark_relations::{
+    ns,
+    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
+};
 use std::borrow::Borrow;
 
 /// A nullifier type. Represents a nullifier (or serial number).

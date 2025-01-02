@@ -1,13 +1,11 @@
 use crate::crypto::enc::CPACipher;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::cmp::CmpGadget;
-use ark_r1cs_std::uint::UInt;
 use ark_r1cs_std::{
-    alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, select::CondSelectGadget,
+    alloc::AllocVar, cmp::CmpGadget, eq::EqGadget, fields::fp::FpVar, prelude::Boolean,
+    select::CondSelectGadget, uint::UInt,
 };
-use ark_relations::ns;
-use ark_relations::r1cs::Result as ArkResult;
+use ark_relations::{ns, r1cs::Result as ArkResult};
 use ark_serialize::CanonicalSerialize;
 
 use crate::{
@@ -16,13 +14,15 @@ use crate::{
     util::ArrayVar,
 };
 
-use super::{
+use crate::generic::{
     bulletin::PublicCallbackBul,
     callbacks::{add_ticket_to_hc_zk, CallbackCom, CallbackComVar},
     interaction::Callback,
     object::{Time, TimeVar},
     user::{User, UserData, UserVar},
 };
+
+use crate::generic::interaction::Interaction;
 
 #[derive(Clone)]
 pub struct PubScanArgs<
@@ -636,3 +636,37 @@ where
 
     Ok(b)
 }
+
+pub fn get_scan_interaction<
+    F: PrimeField + Absorb,
+    U: UserData<F>,
+    CBArgs: Clone,
+    CBArgsVar: AllocVar<CBArgs, F> + Clone,
+    Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar>,
+    CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
+    H: FieldHash<F>,
+    const NUMSCANS: usize,
+>() -> Interaction<
+    F,
+    U,
+    PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+    PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+    PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>,
+    PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>,
+    CBArgs,
+    CBArgsVar,
+    0,
+>
+where
+    U::UserDataVar: CondSelectGadget<F> + EqGadget<F>,
+{
+    Interaction {
+        meth: (
+            scan_method::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>,
+            scan_predicate::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>,
+        ),
+        callbacks: [],
+    }
+}
+
+// PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMCBS>

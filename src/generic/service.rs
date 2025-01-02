@@ -1,13 +1,13 @@
-use crate::crypto::enc::AECipherSigZK;
-use crate::crypto::rr::RRSigner;
-use crate::generic::bulletin::BulError;
-use crate::generic::bulletin::PublicUserBul;
-use crate::generic::callbacks::CallbackCom;
-use crate::generic::user::ExecutedMethod;
-use crate::generic::user::UserData;
+use crate::{
+    crypto::{enc::AECipherSigZK, hash::FieldHash, rr::RRSigner},
+    generic::{
+        bulletin::{BulError, PublicUserBul},
+        callbacks::CallbackCom,
+        user::{ExecutedMethod, UserData},
+    },
+};
 use ark_crypto_primitives::sponge::Absorb;
-use ark_ff::PrimeField;
-use ark_ff::ToConstraintField;
+use ark_ff::{PrimeField, ToConstraintField};
 use ark_snark::SNARK;
 
 type Called<F, A, Crypto> = (
@@ -44,6 +44,7 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
         Snark: SNARK<F>,
         PubArgs: Clone + ToConstraintField<F>,
         Bul: PublicUserBul<F, U>,
+        H: FieldHash<F>,
         const NUMCBS: usize,
     >(
         &self,
@@ -70,6 +71,13 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
 
         for i in 0..NUMCBS {
             let cb = interaction_request.cb_tik_list[i].0.clone();
+
+            let cb_com = interaction_request.cb_com_list[i].clone();
+
+            if cb_com != CallbackCom::commit::<H>(&cb) {
+                return false;
+            }
+
             let rand = interaction_request.cb_tik_list[i].1.clone();
             let vpk = sk.rerand(rand).sk_to_pk();
             if vpk != cb.cb_entry.tik {
@@ -98,6 +106,7 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
         Snark: SNARK<F>,
         PubArgs: Clone + ToConstraintField<F>,
         Bul: PublicUserBul<F, U>,
+        H: FieldHash<F>,
         const NUMCBS: usize,
     >(
         &mut self,
@@ -110,7 +119,7 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
         verif_key: &Snark::VerifyingKey,
         data: Self::InteractionData,
     ) -> Result<(), BulError<Self::Error>> {
-        let out = self.approve_interaction(
+        let out = self.approve_interaction::<U, Snark, PubArgs, Bul, H, NUMCBS>(
             &interaction_request,
             sk,
             args,

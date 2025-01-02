@@ -1,12 +1,19 @@
-use crate::crypto::enc::{AECipherSigZK, CPACipher};
-use crate::crypto::rr::RRVerifier;
-use crate::generic::object::{Com, ComVar, Nul, Time, TimeVar};
-use crate::generic::user::UserData;
+use crate::{
+    crypto::{
+        enc::{AECipherSigZK, CPACipher},
+        rr::RRVerifier,
+    },
+    generic::{
+        object::{Com, ComVar, Nul, Time, TimeVar},
+        user::UserData,
+    },
+};
 use ark_crypto_primitives::sponge::Absorb;
-use ark_ff::PrimeField;
-use ark_ff::ToConstraintField;
-use ark_r1cs_std::eq::EqGadget;
-use ark_r1cs_std::prelude::{AllocVar, Boolean};
+use ark_ff::{PrimeField, ToConstraintField};
+use ark_r1cs_std::{
+    eq::EqGadget,
+    prelude::{AllocVar, Boolean},
+};
 use ark_relations::r1cs::SynthesisError;
 use ark_snark::SNARK;
 
@@ -40,7 +47,7 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
         data_var: ComVar<F>,
         extra_witness: Self::MembershipWitnessVar,
         extra_pub: Self::MembershipPubVar,
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<Boolean<F>, SynthesisError>;
 }
 
 pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {

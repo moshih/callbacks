@@ -1,19 +1,26 @@
-use crate::crypto::enc::{AECipherSigZK, CPACipher};
-use crate::crypto::rr::{RRSigner, RRVerifier};
+use crate::crypto::{
+    enc::{AECipherSigZK, CPACipher},
+    rr::{RRSigner, RRVerifier},
+};
 #[cfg(feature = "folding")]
+#[cfg(any(feature = "folding", doc))]
+#[doc(cfg(feature = "folding"))]
 use crate::generic::fold::FoldSer;
 use ark_ff::PrimeField;
-use ark_r1cs_std::fields::fp::FpVar;
-use ark_r1cs_std::prelude::AllocVar;
-use ark_r1cs_std::prelude::AllocationMode;
-use ark_relations::ns;
-use ark_relations::r1cs::Namespace;
-use ark_relations::r1cs::SynthesisError;
+use ark_r1cs_std::{
+    fields::fp::FpVar,
+    prelude::{AllocVar, AllocationMode},
+};
+use ark_relations::{
+    ns,
+    r1cs::{Namespace, SynthesisError},
+};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::borrow::Borrow;
-use rand::distributions::{Distribution, Standard};
-use rand::Rng;
-use rand::{CryptoRng, RngCore};
+use rand::{
+    distributions::{Distribution, Standard},
+    CryptoRng, Rng, RngCore,
+};
 
 use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_relations::r1cs::ToConstraintField;
@@ -149,17 +156,19 @@ where
 }
 
 #[cfg(feature = "folding")]
+#[cfg(any(feature = "folding", doc))]
+#[doc(cfg(feature = "folding"))]
 impl<F: PrimeField> FoldSer<F, PlainTikCryptoVar<F>> for PlainTikCrypto<F> {
     fn repr_len() -> usize {
         1
     }
 
     fn to_fold_repr(&self) -> Vec<crate::generic::object::Ser<F>> {
-        vec![self.0.clone()]
+        vec![self.0]
     }
 
     fn from_fold_repr(ser: &[crate::generic::object::Ser<F>]) -> Self {
-        PlainTikCrypto(ser[0].clone())
+        PlainTikCrypto(ser[0])
     }
 
     fn from_fold_repr_zk(
@@ -172,32 +181,5 @@ impl<F: PrimeField> FoldSer<F, PlainTikCryptoVar<F>> for PlainTikCrypto<F> {
         var: &PlainTikCryptoVar<F>,
     ) -> Result<Vec<crate::generic::object::SerVar<F>>, SynthesisError> {
         Ok(vec![var.0.clone()])
-    }
-}
-
-#[cfg(feature = "folding")]
-impl<F: PrimeField> FoldSer<F, FpVar<F>> for F {
-    fn repr_len() -> usize {
-        1
-    }
-
-    fn to_fold_repr(&self) -> Vec<crate::generic::object::Ser<F>> {
-        vec![self.clone()]
-    }
-
-    fn from_fold_repr(ser: &[crate::generic::object::Ser<F>]) -> Self {
-        ser[0].clone()
-    }
-
-    fn from_fold_repr_zk(
-        var: &[crate::generic::object::SerVar<F>],
-    ) -> Result<FpVar<F>, SynthesisError> {
-        Ok(var[0].clone())
-    }
-
-    fn to_fold_repr_zk(
-        var: &FpVar<F>,
-    ) -> Result<Vec<crate::generic::object::SerVar<F>>, SynthesisError> {
-        Ok(vec![var.clone()])
     }
 }

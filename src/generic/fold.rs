@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-use super::{
+use crate::generic::{
     bulletin::PublicCallbackBul,
     callbacks::{CallbackComVar, CallbackTicketVar},
     object::{Ser, SerVar, ZKFields, ZKFieldsVar},
@@ -35,6 +35,32 @@ pub trait FoldSer<F: PrimeField, ArgsVar: AllocVar<Self, F>> {
 
     fn from_fold_repr_zk(var: &[SerVar<F>]) -> Result<ArgsVar, SynthesisError>;
     fn to_fold_repr_zk(var: &ArgsVar) -> Result<Vec<SerVar<F>>, SynthesisError>;
+}
+
+impl<F: PrimeField> FoldSer<F, FpVar<F>> for F {
+    fn repr_len() -> usize {
+        1
+    }
+
+    fn to_fold_repr(&self) -> Vec<crate::generic::object::Ser<F>> {
+        vec![*self]
+    }
+
+    fn from_fold_repr(ser: &[crate::generic::object::Ser<F>]) -> Self {
+        ser[0]
+    }
+
+    fn from_fold_repr_zk(
+        var: &[crate::generic::object::SerVar<F>],
+    ) -> Result<FpVar<F>, SynthesisError> {
+        Ok(var[0].clone())
+    }
+
+    fn to_fold_repr_zk(
+        var: &FpVar<F>,
+    ) -> Result<Vec<crate::generic::object::SerVar<F>>, SynthesisError> {
+        Ok(vec![var.clone()])
+    }
 }
 
 pub trait FoldableUserData<F: PrimeField + Absorb>:

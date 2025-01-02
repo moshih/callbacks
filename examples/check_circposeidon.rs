@@ -1,8 +1,11 @@
 use ark_bls12_381::Fr as F;
-use zk_callbacks::generic::object::ZKFields;
-use zk_callbacks::generic::user::User;
-use zk_callbacks::generic::user::UserData;
-use zk_callbacks::impls::hash::CircPoseidon;
+use zk_callbacks::{
+    generic::{
+        object::ZKFields,
+        user::{User, UserData},
+    },
+    impls::hash::CircPoseidon,
+};
 use zk_object::zk_object;
 
 #[zk_object(F)]

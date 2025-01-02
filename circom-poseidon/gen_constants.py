@@ -1,3 +1,5 @@
+# Written by Andrei Kotliarov
+
 import re
 
 with open("poseidon_constants_old.circom") as f:

@@ -1,26 +1,31 @@
-use crate::crypto::enc::{AECipherSigZK, CPACipher};
-use crate::crypto::hash::FieldHash;
-use crate::crypto::rr::RRVerifier;
-use crate::generic::interaction::Interaction;
-use crate::generic::object::{
-    CBHash, CBHashVar, Com, ComRand, ComRandVar, ComVar, Id, IdVar, Ser, SerVar, Time, TimeVar,
+use crate::{
+    crypto::{
+        enc::{AECipherSigZK, CPACipher},
+        hash::FieldHash,
+        rr::RRVerifier,
+    },
+    generic::{
+        interaction::Interaction,
+        object::{
+            CBHash, CBHashVar, Com, ComRand, ComRandVar, ComVar, Id, IdVar, Ser, SerVar, Time,
+            TimeVar,
+        },
+        user::UserData,
+    },
 };
-use crate::generic::user::UserData;
 use ark_crypto_primitives::sponge::Absorb;
-use ark_ff::PrimeField;
-use ark_ff::ToConstraintField;
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::alloc::AllocationMode;
-use ark_r1cs_std::boolean::Boolean;
-use ark_r1cs_std::convert::ToConstraintFieldGadget;
-use ark_relations::ns;
-use ark_relations::r1cs::Namespace;
-use ark_relations::r1cs::SynthesisError;
+use ark_ff::{PrimeField, ToConstraintField};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    boolean::Boolean,
+    convert::ToConstraintFieldGadget,
+};
+use ark_relations::{
+    ns,
+    r1cs::{Namespace, SynthesisError},
+};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use rand::distributions::Standard;
-use rand::prelude::Distribution;
-use rand::Rng;
-use rand::{CryptoRng, RngCore};
+use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng, RngCore};
 use std::borrow::Borrow;
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize, Default)]
@@ -115,6 +120,14 @@ impl<Args: Clone, Crypto: AECipherSigZK<F, Args>, F: PrimeField + Absorb>
 pub struct CallbackCom<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
     pub cb_entry: CallbackTicket<F, Args, Crypto>,
     pub com_rand: ComRand<F>,
+}
+
+impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
+    CallbackCom<F, Args, Crypto>
+{
+    pub fn get_ticket(&self) -> Crypto::SigPK {
+        self.cb_entry.tik.clone()
+    }
 }
 
 #[derive(Clone)]
@@ -227,7 +240,7 @@ pub(crate) fn create_defaults<
         .unwrap_or_else(|_| panic!("Failed to create defaults."))
 }
 
-pub fn create_cbs_from_interaction<
+pub(crate) fn create_cbs_from_interaction<
     F: PrimeField + Absorb,
     U: UserData<F>,
     PubArgs: Clone + std::fmt::Debug,
@@ -284,7 +297,7 @@ where
         .unwrap()
 }
 
-pub fn add_ticket_to_hc<
+pub(crate) fn add_ticket_to_hc<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
     Args: Clone,
@@ -297,7 +310,7 @@ pub fn add_ticket_to_hc<
     H::hash(&[&[hash_chain], serialized_ticket.as_slice()].concat())
 }
 
-pub fn add_ticket_to_hc_zk<
+pub(crate) fn add_ticket_to_hc_zk<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
     Args: Clone,

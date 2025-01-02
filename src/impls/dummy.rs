@@ -1,11 +1,12 @@
-use crate::crypto::enc::{AECipherSigZK, CPACipher};
-use crate::generic::bulletin::{
-    CallbackBulletin, JoinableBulletin, PublicCallbackBul, PublicUserBul, UserBul,
+use crate::{
+    crypto::enc::{AECipherSigZK, CPACipher},
+    generic::{
+        bulletin::{CallbackBulletin, JoinableBulletin, PublicCallbackBul, PublicUserBul, UserBul},
+        object::{Time, TimeVar},
+        service::ServiceProvider,
+        user::UserData,
+    },
 };
-use crate::generic::object::{Time, TimeVar};
-use crate::generic::service::ServiceProvider;
-use crate::generic::user::UserData;
-use crate::util::UnitVar;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_r1cs_std::prelude::Boolean;
@@ -20,8 +21,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for DummyStore 
     type MembershipPub = ();
     type MembershipWitness = ();
 
-    type MembershipPubVar = UnitVar;
-    type MembershipWitnessVar = UnitVar;
+    type MembershipPubVar = ();
+    type MembershipWitnessVar = ();
 
     fn verify_in<Args, Snark: ark_snark::SNARK<F>, const NUMCBS: usize>(
         &self,
@@ -40,8 +41,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for DummyStore 
         _data_var: crate::generic::object::ComVar<F>,
         _extra_witness: Self::MembershipWitnessVar,
         _extra_pub: Self::MembershipPubVar,
-    ) -> Result<(), ark_relations::r1cs::SynthesisError> {
-        Ok(())
+    ) -> Result<Boolean<F>, ark_relations::r1cs::SynthesisError> {
+        Ok(Boolean::TRUE)
     }
 }
 
@@ -82,13 +83,13 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
     type Error = ();
 
     type MembershipPub = ();
-    type MembershipPubVar = UnitVar;
+    type MembershipPubVar = ();
     type MembershipWitness = ();
-    type MembershipWitnessVar = UnitVar;
+    type MembershipWitnessVar = ();
     type NonMembershipPub = ();
-    type NonMembershipPubVar = UnitVar;
+    type NonMembershipPubVar = ();
     type NonMembershipWitness = ();
-    type NonMembershipWitnessVar = UnitVar;
+    type NonMembershipWitnessVar = ();
 
     fn verify_in(
         &self,

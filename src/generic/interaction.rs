@@ -1,25 +1,26 @@
-use crate::crypto::enc::AECipherSigZK;
-use crate::crypto::hash::FieldHash;
-use crate::generic::bulletin::PublicUserBul;
-use crate::generic::callbacks::add_ticket_to_hc_zk;
-use crate::generic::callbacks::create_defaults;
-use crate::generic::callbacks::{CallbackCom, CallbackComVar};
-use crate::generic::object::{Com, ComVar, Id, Nul, NulVar, Time};
-use crate::generic::user::{User, UserData, UserVar};
-use crate::util::ArrayVar;
+use crate::{
+    crypto::{enc::AECipherSigZK, hash::FieldHash},
+    generic::{
+        bulletin::PublicUserBul,
+        callbacks::{add_ticket_to_hc_zk, create_defaults, CallbackCom, CallbackComVar},
+        object::{Com, ComVar, Id, Nul, NulVar, Time},
+        user::{User, UserData, UserVar},
+    },
+    util::ArrayVar,
+};
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::boolean::Boolean;
-use ark_r1cs_std::eq::EqGadget;
+use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result as ArkResult},
 };
 use ark_snark::SNARK;
 use core::marker::PhantomData;
-use rand::distributions::{Distribution, Standard};
-use rand::{CryptoRng, RngCore};
+use rand::{
+    distributions::{Distribution, Standard},
+    CryptoRng, RngCore,
+};
 
 pub type Predicate<F, UserVar, PubArgsVar, PrivArgsVar> =
     fn(&UserVar, &UserVar, PubArgsVar, PrivArgsVar) -> ArkResult<Boolean<F>>;
@@ -235,7 +236,8 @@ impl<
             User::commit_in_zk::<H>(old_user_var.clone())?,
             priv_bul_witness,
             pub_bul_data,
-        )?;
+        )?
+        .enforce_equal(&Boolean::TRUE)?;
 
         // Enforce any method-specific predicates
         let b = (self.associated_method.meth.1)(
@@ -551,7 +553,8 @@ impl<
             User::commit_in_zk::<H>(user_var)?,
             extra_data_for_membership,
             pub_data_for_membership,
-        )?;
+        )?
+        .enforce_equal(&Boolean::TRUE)?;
 
         Ok(())
     }

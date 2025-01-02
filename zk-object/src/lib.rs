@@ -1,15 +1,10 @@
 extern crate proc_macro;
 use proc_macro2::TokenStream;
-use quote::quote;
-use quote::quote_spanned;
-use syn::parse_quote;
-use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::Fields;
-use syn::Ident;
-use syn::Type;
-use syn::{parse_macro_input, Data, DeriveInput};
-use syn::{GenericParam, Generics};
+use quote::{quote, quote_spanned};
+use syn::{
+    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, Data, DeriveInput,
+    Fields, GenericParam, Generics, Ident, Type,
+};
 
 fn add_trait_bounds(mut generics: Generics, field_type: &TokenStream) -> Generics {
     for param in &mut generics.params {

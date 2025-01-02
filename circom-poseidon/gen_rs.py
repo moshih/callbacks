@@ -1,3 +1,5 @@
+# Written by Andrei Kotliarov
+
 from textwrap import indent, dedent
 from constants import C, M
 
