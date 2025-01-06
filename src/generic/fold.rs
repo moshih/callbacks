@@ -27,13 +27,21 @@ use crate::generic::{
     user::{User, UserData, UserVar},
 };
 
+/// Serialize elements into a foldable representation for use in PSE's folding-schemes.
 pub trait FoldSer<F: PrimeField, ArgsVar: AllocVar<Self, F>> {
+    /// Get the length of the serialized representation.
     fn repr_len() -> usize;
 
+    /// Construct the serialized representation.
     fn to_fold_repr(&self) -> Vec<Ser<F>>;
+
+    /// Construct the object from a serialized representation (deserialize).
     fn from_fold_repr(ser: &[Ser<F>]) -> Self;
 
+    /// Deserialize the serialized representation into the object in-circuit.
     fn from_fold_repr_zk(var: &[SerVar<F>]) -> Result<ArgsVar, SynthesisError>;
+
+    /// Construct the serialized representation in-circuit.
     fn to_fold_repr_zk(var: &ArgsVar) -> Result<Vec<SerVar<F>>, SynthesisError>;
 }
 
@@ -63,12 +71,16 @@ impl<F: PrimeField> FoldSer<F, FpVar<F>> for F {
     }
 }
 
+/// A user which also can be converted into a foldable serialized representation.
+///
+/// This is necessary for a user to be foldable.
 pub trait FoldableUserData<F: PrimeField + Absorb>:
     UserData<F> + FoldSer<F, Self::UserDataVar>
 {
 }
 
 impl<F: PrimeField> ZKFields<F> {
+    /// Deserialize the bookkeeping fields in a user from a folded representation.
     pub fn deserialize(data: &[Ser<F>]) -> Self {
         let ing = match data[5] {
             t if t == F::from(0) => false,
@@ -87,6 +99,7 @@ impl<F: PrimeField> ZKFields<F> {
 }
 
 impl<F: PrimeField> ZKFieldsVar<F> {
+    /// Deserialize the bookkeeping fields from a folded representation in-circuit.
     pub fn deserialize(data: &[SerVar<F>]) -> Result<Self, SynthesisError> {
         Ok(Self {
             nul: data[0].clone(),
@@ -139,6 +152,8 @@ impl<F: PrimeField + Absorb, U: FoldableUserData<F>> FoldSer<F, UserVar<F, U>> f
             data,
             zk_fields,
             callbacks: vec![],
+            scan_index: None,
+            in_progress_cbs: vec![],
         }
     }
 
@@ -315,6 +330,16 @@ where
     }
 }
 
+/// This allows for users to perform a folding scan instead of scanning incremenetally.
+///
+/// This implements `FCircuit` from PSE's folding-schemes, and so it may be used with any folding
+/// scheme supported by FCircuit.
+///
+/// The parameters passed in include the public arguments for the scan. The private arguments are
+/// treated as extra witnesses during the folding process.
+///
+/// At each folding step, [`PrivScanArgs`] are deserialized from the folding representation. This
+/// struct will always have a callback count of `1`, as we only fold the scan one step at a time.
 #[derive(Clone)]
 pub struct FoldingScan<
     F: PrimeField + Absorb,
@@ -329,6 +354,7 @@ pub struct FoldingScan<
     _u: PhantomData<U>,
     _c: PhantomData<Crypto>,
     _h: PhantomData<H>,
+    /// The public arguments during the scan.
     pub const_args: PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, 1>,
 }
 

@@ -28,7 +28,29 @@ use ark_relations::r1cs::ToConstraintField;
 #[derive(
     Clone, Debug, PartialEq, Eq, Default, CanonicalSerialize, CanonicalDeserialize, PartialOrd, Ord,
 )]
-pub struct PlainTikCrypto<F: CanonicalSerialize + CanonicalDeserialize>(pub F);
+/// The object associated to a single plain ticket.
+///
+/// When in the centralized setting (a single service controls the bulletins), tickets don't need
+/// to be signature public keys. In this setting, signatures are not necessary (as the bulletin is
+/// owned by the service anyways!)
+///
+/// Therefore, this constitutes a **plain random ticket** which isn't treated as a signature public
+/// key.
+///
+/// **Take a look at the documentation on the type aliases**, as those are more useful.
+pub struct PlainTikCrypto<F: CanonicalSerialize + CanonicalDeserialize>(F);
+
+impl<F: CanonicalSerialize + CanonicalDeserialize + Clone> PlainTikCrypto<F> {
+    /// Construct a new plain ticket from a field element.
+    pub fn new(f: F) -> Self {
+        Self(f)
+    }
+
+    /// Convert a plain ticket into a field element.
+    pub fn to(&self) -> F {
+        self.0.clone()
+    }
+}
 
 impl<F: PrimeField> ToConstraintField<F> for PlainTikCrypto<F> {
     fn to_field_elements(&self) -> Option<Vec<F>> {
@@ -36,6 +58,7 @@ impl<F: PrimeField> ToConstraintField<F> for PlainTikCrypto<F> {
     }
 }
 
+/// A plain ticket in-circuit.
 #[derive(Clone)]
 pub struct PlainTikCryptoVar<F: PrimeField>(pub FpVar<F>);
 
@@ -106,10 +129,6 @@ where
         ciphertext - self.0
     }
 
-    fn encrypt_in_zk(key: Self::KeyVar, message: Self::MV) -> Result<Self::CV, SynthesisError> {
-        Ok(message + key.0)
-    }
-
     fn decrypt_in_zk(key: Self::KeyVar, ciphertext: Self::CV) -> Result<Self::MV, SynthesisError> {
         Ok(ciphertext - key.0)
     }
@@ -134,23 +153,70 @@ where
     }
 }
 
-impl<F: PrimeField> AECipherSigZK<F, F> for PlainTikCrypto<F>
+/// A fake signature public key.
+///
+/// This should be used when public keys are necessary. As signatures are not necessary in the
+/// centralized setting, any public key can be used in an interaction when generating tickets.
+///
+/// Therefore, one should just use [`FakeSigPubkey::pk()`].
+pub type FakeSigPubkey<F> = PlainTikCrypto<F>;
+
+impl<F: PrimeField> FakeSigPubkey<F> {
+    /// This is for use with [`FakeSigPubkey`]. This function just constructs a fake public verification key for rerandomization.
+    pub fn pk() -> Self {
+        FakeSigPubkey::new(F::from(0))
+    }
+}
+
+/// The fake signature public key in-circuit.
+pub type FakeSigPubkeyVar<F> = PlainTikCryptoVar<F>;
+
+/// A fake signature private key.
+///
+/// This should be used when private keys are used. As signatures are not necessary in the
+/// centralized setting, any private key can be used to verify tickets.
+///
+/// Therefore, one should just use [`FakeSigPrivkey::sk()`].
+pub type FakeSigPrivkey<F> = PlainTikCrypto<F>;
+
+impl<F: PrimeField> FakeSigPrivkey<F> {
+    /// This is for use with [`FakeSigPrivkey`]. This function just constructs a fake signing key
+    /// to verify interactions.
+    pub fn sk() -> Self {
+        FakeSigPrivkey::new(F::from(0))
+    }
+}
+
+/// An OTP encryption key.
+pub type OTPEncKey<F> = PlainTikCrypto<F>;
+
+/// The OTP encryption key in-circuit.
+pub type OTPEncKeyVar<F> = PlainTikCryptoVar<F>;
+
+/// The type which implements AECipherSigZK. This uses an OTP for encryption of arguments, and
+/// doesn't have any signatures.
+///
+/// This is what should be used whenever callback ticket
+/// posting is necessary in the centralized setting. This should be used as an indicator type.
+pub type NoSigOTP<F> = PlainTikCrypto<F>;
+
+impl<F: PrimeField> AECipherSigZK<F, F> for NoSigOTP<F>
 where
     Standard: Distribution<F>,
 {
     type Sig = ();
-    type SigPK = PlainTikCrypto<F>;
-    type SigPKV = PlainTikCryptoVar<F>;
+    type SigPK = FakeSigPubkey<F>;
+    type SigPKV = FakeSigPubkeyVar<F>;
 
-    type SigSK = PlainTikCrypto<F>;
+    type SigSK = FakeSigPrivkey<F>;
 
     type AV = FpVar<F>;
 
     type Ct = F;
 
-    type EncKey = PlainTikCrypto<F>;
+    type EncKey = OTPEncKey<F>;
 
-    type EncKeyVar = PlainTikCryptoVar<F>;
+    type EncKeyVar = OTPEncKeyVar<F>;
 
     type Rand = F;
 }

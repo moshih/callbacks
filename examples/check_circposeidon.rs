@@ -1,4 +1,5 @@
 use ark_bls12_381::Fr as F;
+use rand::thread_rng;
 use zk_callbacks::{
     generic::{
         object::ZKFields,
@@ -16,6 +17,8 @@ struct ForumUser {
 }
 
 fn main() {
+    let mut rng = thread_rng();
+
     let data = ForumUser {
         is_banned: false,
         reputation: F::from(0),
@@ -30,11 +33,9 @@ fn main() {
         is_ingest_over: true,
     };
 
-    let out = User {
-        data: data.clone(),
-        zk_fields: zk_fields.clone(),
-        callbacks: vec![],
-    };
+    let mut out = User::create(data.clone(), &mut rng);
+    out.zk_fields = zk_fields.clone();
+
     for d in data.serialize_elements() {
         if d != F::from(0) {
             print!("{} ", d);

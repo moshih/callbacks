@@ -1,8 +1,8 @@
 use crate::{
     crypto::enc::{AECipherSigZK, CPACipher},
     generic::{
-        bulletin::{CallbackBulletin, JoinableBulletin, PublicCallbackBul, PublicUserBul, UserBul},
-        object::{Time, TimeVar},
+        bulletin::{CallbackBul, JoinableBulletin, PublicCallbackBul, PublicUserBul, UserBul},
+        object::{Com, Time, TimeVar},
         service::ServiceProvider,
         user::UserData,
     },
@@ -12,12 +12,16 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::prelude::Boolean;
 use ark_relations::r1cs::SynthesisError;
 
+/// A dummy store. This is a testing object which implements all bulletins.
+///
+/// All possible user objects are contained within the dummy store, and there are zero callback
+/// tickets in the dummy store. Proving membership of a user amounts to no constraints as it is
+/// always true, and proving membership / nonmembership of a callback ticket is similarly no
+/// constraints (as all callbacks are not in the store).
 #[derive(Clone, Default)]
 pub struct DummyStore;
 
 impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for DummyStore {
-    type Error = ();
-
     type MembershipPub = ();
     type MembershipWitness = ();
 
@@ -37,6 +41,10 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for DummyStore 
         true
     }
 
+    fn get_membership_data(&self, _object: Com<F>) -> Option<((), ())> {
+        Some(((), ()))
+    }
+
     fn enforce_membership_of(
         _data_var: crate::generic::object::ComVar<F>,
         _extra_witness: Self::MembershipWitnessVar,
@@ -47,7 +55,9 @@ impl<F: PrimeField + Absorb, U: UserData<F>> PublicUserBul<F, U> for DummyStore 
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> UserBul<F, U> for DummyStore {
-    fn has_never_recieved_nul(&self, _nul: &crate::generic::object::Nul<F>) -> bool {
+    type Error = ();
+
+    fn has_never_received_nul(&self, _nul: &crate::generic::object::Nul<F>) -> bool {
         true
     }
 
@@ -80,8 +90,6 @@ impl<F: PrimeField + Absorb, U: UserData<F>> JoinableBulletin<F, U> for DummySto
 impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
     PublicCallbackBul<F, Args, Crypto> for DummyStore
 {
-    type Error = ();
-
     type MembershipPub = ();
     type MembershipPubVar = ();
     type MembershipWitness = ();
@@ -102,6 +110,13 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
         true
     }
 
+    fn get_membership_data(
+        &self,
+        _tik: <Crypto as AECipherSigZK<F, Args>>::SigPK,
+    ) -> ((), (), (), ()) {
+        ((), (), (), ())
+    }
+
     fn enforce_membership_of(
         _tikvar: (
             <Crypto as AECipherSigZK<F, Args>>::SigPKV,
@@ -111,7 +126,7 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
         _extra_witness: Self::MembershipWitnessVar,
         _extra_pub: Self::MembershipPubVar,
     ) -> Result<Boolean<F>, SynthesisError> {
-        Ok(Boolean::TRUE)
+        Ok(Boolean::FALSE)
     }
 
     fn enforce_nonmembership_of(
@@ -119,14 +134,16 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
         _extra_witness: Self::NonMembershipWitnessVar,
         _extra_pub: Self::NonMembershipPubVar,
     ) -> Result<Boolean<F>, SynthesisError> {
-        Ok(Boolean::FALSE)
+        Ok(Boolean::TRUE)
     }
 }
 
 impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
-    CallbackBulletin<F, Args, Crypto> for DummyStore
+    CallbackBul<F, Args, Crypto> for DummyStore
 {
-    fn has_never_recieved_tik(&self, _tik: &<Crypto as AECipherSigZK<F, Args>>::SigPK) -> bool {
+    type Error = ();
+
+    fn has_never_received_tik(&self, _tik: &<Crypto as AECipherSigZK<F, Args>>::SigPK) -> bool {
         true
     }
 
@@ -147,7 +164,7 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
     type Error = ();
     type InteractionData = ();
 
-    fn has_never_recieved_tik(&self, _ticket: Crypto::SigPK) -> bool {
+    fn has_never_received_tik(&self, _ticket: Crypto::SigPK) -> bool {
         true
     }
 

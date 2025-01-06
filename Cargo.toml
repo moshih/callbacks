@@ -24,6 +24,7 @@ circom_poseidon = { path = "circom-poseidon", optional = true }
 folding-schemes = { git = "https://github.com/privacy-scaling-explorations/sonobe", package = "folding-schemes", optional = true }
 nalgebra = "0.33.2"
 ark-grumpkin = { version = "0.5.0", features = ["r1cs"] }
+blake2 = "0.10.6"
 
 [features]
 asynchr = []

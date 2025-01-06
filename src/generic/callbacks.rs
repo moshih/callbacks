@@ -28,21 +28,44 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng, RngCore};
 use std::borrow::Borrow;
 
+/// A callback ticket consists of all the data stored within a user associated to a callback.
+///
+/// This is the object given to a service when providing a callback. This allows the service to
+/// force a function call on the user object.
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct CallbackTicket<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
+    /// The random ticket. This is the base part of the callback ticket -- this is the random value
+    /// handed to the service which can then later be published to call the function.
+    ///
+    /// Note that this is a public key; this way, a service may use the rerandomized public key to
+    /// sign arguments, so users are ensured that arguments are authentic.
     pub tik: Crypto::SigPK,
+    /// The ID for the callback. This is what determines what function is called. If the function
+    /// must remain private as well, then the function ID must be passed in as an argument in zero
+    /// knowledge. This determines what function can be called by this ticket.
     pub cb_method_id: Id<F>,
+    /// Does this ticket expire.
     pub expirable: bool,
+    /// What time does this callback expire.
     pub expiration: Time<F>,
+    /// A unique random encryption key to hide the arguments when the server calls the callback.
     pub enc_key: Crypto::EncKey,
 }
 
+/// In-circuit representation of a callback ticket.
+///
+/// See [`CallbackTicket`](`CallbackTicket`) for more information.
 #[derive(Clone)]
 pub struct CallbackTicketVar<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
+    /// In circuit representation of the ticket.
     pub tik: Crypto::SigPKV,
+    /// In circuit representation of the method id.
     pub cb_method_id: IdVar<F>,
+    /// In circuit representation of the expirable status of the ticket.
     pub expirable: Boolean<F>,
+    /// In circuit representation of the expiration time.
     pub expiration: TimeVar<F>,
+    /// In circuit representation of the encryption key.
     pub enc_key: Crypto::EncKeyVar,
 }
 
@@ -116,23 +139,35 @@ impl<Args: Clone, Crypto: AECipherSigZK<F, Args>, F: PrimeField + Absorb>
     }
 }
 
+/// A full callback ticket object, which can be committed to.
+///
+/// Represents an *opened* callback commitment. Contains the ticket information, as well as
+/// commitment randomness.
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct CallbackCom<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
+    /// The callback ticket.
     pub cb_entry: CallbackTicket<F, Args, Crypto>,
+    /// The commitment randomness from the opened commitment.
     pub com_rand: ComRand<F>,
 }
 
 impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
     CallbackCom<F, Args, Crypto>
 {
+    /// Get the underlying random ticket from the opened callback commitment.
     pub fn get_ticket(&self) -> Crypto::SigPK {
         self.cb_entry.tik.clone()
     }
 }
 
+/// An in-circuit representation of an opened callback commitment.
+///
+/// See [`CallbackCom`](`CallbackCom`) for more details.
 #[derive(Clone)]
 pub struct CallbackComVar<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>> {
+    /// The callback ticket in-circuit.
     pub cb_entry: CallbackTicketVar<F, Args, Crypto>,
+    /// The commitment randomness in-circuit.
     pub com_rand: ComRandVar<F>,
 }
 
@@ -216,8 +251,7 @@ pub(crate) fn create_defaults<
     interaction
         .callbacks
         .iter()
-        .enumerate()
-        .map(|(_, cb)| {
+        .map(|cb| {
             let ticket_value = Crypto::SigPK::default();
             let enc_key: Crypto::EncKey = Crypto::EncKey::default();
             let com_rand = F::zero();

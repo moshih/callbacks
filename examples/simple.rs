@@ -7,30 +7,28 @@ use rand::thread_rng;
 use std::time::SystemTime;
 use zk_callbacks::{
     generic::{
-        bulletin::{CallbackBulletin, JoinableBulletin, PublicCallbackBul, UserBul},
+        bulletin::{CallbackBul, JoinableBulletin, UserBul},
         interaction::{generate_keys_for_statement_in, Callback, Interaction},
         object::{Id, Time},
-        scan::{
-            scan_method, scan_predicate, PrivScanArgs, PrivScanArgsVar, PubScanArgs, PubScanArgsVar,
-        },
+        scan::{get_scan_interaction, PubScanArgs},
         service::ServiceProvider,
         user::{User, UserVar},
     },
     impls::{
         centralized::{
-            crypto::PlainTikCrypto,
-            ds::sigstore::{NonmembStore, UOVCallbackStore, UOVObjStore, UOVStore},
+            crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP},
+            ds::sigstore::{UOVCallbackStore, UOVObjStore, UOVStore},
         },
         hash::Poseidon,
     },
+    scannable_zk_object,
 };
-use zk_object::scannable_zk_object;
 
 // Initialize a zk-object!
 
 #[scannable_zk_object(F)]
 #[derive(Default)]
-pub struct TestUserData2 {
+pub struct TestData {
     pub token1: F,
     pub token2: F,
 }
@@ -46,47 +44,31 @@ type CBArg = F;
 type CBArgVar = FpVar<F>;
 
 // The wrapper "User" type around our zk-object.
-type U = User<F, TestUserData2>;
-type UV = UserVar<F, TestUserData2>;
+type U = User<F, TestData>;
+type UV = UserVar<F, TestData>;
+
+// The crypto we are using for authenticity and argument hiding.
+type Cr = NoSigOTP<F>;
 
 // The type for the callback (what data it takes in: a user and an argument, in this case a field
 // element).
-type CB = Callback<F, TestUserData2, CBArg, CBArgVar>;
+type CB = Callback<F, TestData, CBArg, CBArgVar>;
 
 // The first type of interaction (doing a method update, which does nothing so far)
-type Int1 = Interaction<F, TestUserData2, (), (), (), (), CBArg, CBArgVar, 1>;
+type Int1 = Interaction<F, TestData, (), (), (), (), CBArg, CBArgVar, 1>;
 
 // The scanning type: Most of this is unneccessary to understand, but really what it states is
 //  - The field and user (F, TestUserData2)
 //  - The callback argument (F, FpVar<F>)
-//  - The method of providing ticket authenticity and hiding arguments (PlainTikCrypto<F>)
+//  - The method of providing ticket authenticity and hiding arguments (NoSigOTP<F>)
 //  - The callback bulletin (UOVCallbackStore<F>)
 //  - The number of callbacks
 //
-//  Note that the PlainTikCrypto in this case is centralized: there is no need to provide
+//  Note that the NoSigOTP in this case is centralized: there is no need to provide
 //  authenticity, so signatures are (), and encryption is via a OTP
 //
 //  The actual type consists of membership data and the current time (public data).
-type PubScan =
-    PubScanArgs<F, TestUserData2, F, FpVar<F>, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
-type PubScanVar =
-    PubScanArgsVar<F, TestUserData2, F, FpVar<F>, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
-
-// The private scanning type:
-//  - The field (F)
-//  - The callback argument (F),
-//  - The crypto (PlainTikCrypto<F>),
-//  - The callback bulletin (UOVCallbackStore<F>),
-//  - The number of callbacks
-//
-//  The actual type contains the tickets you pass into the proof of proper scanning, and private
-//  witness membership data.
-type PrivScan = PrivScanArgs<F, F, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
-type PrivScanVar = PrivScanArgsVar<F, F, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
-
-// The second type of interaction (updating the user due to a scan)
-type IntScan =
-    Interaction<F, TestUserData2, PubScan, PubScanVar, PrivScan, PrivScanVar, CBArg, CBArgVar, 0>;
+type PubScan = PubScanArgs<F, TestData, F, FpVar<F>, Cr, UOVCallbackStore<F>, NUMSCANS>;
 
 // Two types of interactions: updating the user normally with Int1, or updating the user with a
 // scan through IntScan.
@@ -190,33 +172,6 @@ fn main() {
         callbacks: [cb.clone()],
     };
 
-    // The second type of allowed interaction: a callback interaction
-    let cb_interaction: IntScan = Interaction {
-        meth: (
-            scan_method::<
-                F,
-                TestUserData2,
-                F,
-                FpVar<F>,
-                PlainTikCrypto<F>,
-                UOVCallbackStore<F>,
-                Poseidon<2>,
-                NUMSCANS,
-            >,
-            scan_predicate::<
-                F,
-                TestUserData2,
-                F,
-                FpVar<F>,
-                PlainTikCrypto<F>,
-                UOVCallbackStore<F>,
-                Poseidon<2>,
-                NUMSCANS,
-            >,
-        ),
-        callbacks: [],
-    };
-
     // Generate keys for interaction 1, callback interaction, and proving a specific statement
     // about users
 
@@ -236,30 +191,28 @@ fn main() {
     let start = SystemTime::now();
 
     // generate keys for the method described initially
-    let (pk, vk) =
-        interaction // see interaction
-            .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, UOVObjStore<F>>(
-                &mut rng,
-                Some(store.obj_bul.get_pubkey()),
-                None,
-                false,
-            );
+    let (pk, vk) = interaction // see interaction
+        .generate_keys::<Poseidon<2>, Groth16<E>, Cr, UOVObjStore<F>>(
+            &mut rng,
+            Some(store.obj_bul.get_pubkey()),
+            None,
+            false,
+        );
 
     // generate keys for the callback scan
-    let (pks, vks) =
-        cb_interaction // see cb_interaction
-            .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, UOVObjStore<F>>(
-                &mut rng,
-                Some(store.obj_bul.get_pubkey()),
-                Some(ex),
-                true,
-            );
+    let (pks, vks) = get_scan_interaction::<_, _, _, _, _, _, Poseidon<2>, 1>()
+        .generate_keys::<Poseidon<2>, Groth16<E>, Cr, UOVObjStore<F>>(
+            &mut rng,
+            Some(store.obj_bul.get_pubkey()),
+            Some(ex),
+            true,
+        );
 
     // generate keys for the arbitrary predicate
     let (pki, vki) = generate_keys_for_statement_in::<
         F,
         Poseidon<2>,
-        TestUserData2,
+        TestData,
         (),
         (),
         (),
@@ -280,7 +233,7 @@ fn main() {
 
     println!("[USER] Creation... ");
     let mut u = User::create(
-        TestUserData2 {
+        TestData {
             token1: F::from(0), // Try changing this to 1 or 2 to see what happens!
             token2: F::from(3), // Try changing this off of 3 to see what happens!
         },
@@ -289,7 +242,7 @@ fn main() {
     println!("[USER] Created! User: {:o}", u);
 
     // Join in as a user
-    let _ = <UOVObjStore<F> as JoinableBulletin<F, TestUserData2>>::join_bul(
+    let _ = <UOVObjStore<F> as JoinableBulletin<F, TestData>>::join_bul(
         &mut store.obj_bul,
         u.commit::<Poseidon<2>>(),
         (),
@@ -342,22 +295,16 @@ fn main() {
     let start = SystemTime::now();
     // Update the user in accordance with the first interaction
     let exec_method = u
-        .interact::<Poseidon<2>, (), (), (), (), F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, UOVObjStore<F>, 1>(
+        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, Cr, Groth16<E>, UOVObjStore<F>, 1>(
             &mut rng,
             interaction.clone(), // see interaction
-            [PlainTikCrypto(F::from(0))],
-            (
-                store
-                    .obj_bul.get_signature_of(&u.commit::<Poseidon<2>>())
-                    .unwrap(),
-                store.obj_bul.get_pubkey(),
-            ),
+            [FakeSigPubkey::pk()],
+            &store.obj_bul,
             true,
             &pk,
             (),
             (),
-            false,
-            true
+            true,
         )
         .unwrap();
 
@@ -370,29 +317,26 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing...");
     let start = SystemTime::now();
 
-    let out = <UOVObjStore<F> as UserBul<F, TestUserData2>>::verify_interact_and_append::<
-        (),
-        Groth16<E>,
-        1,
-    >(
-        &mut store.obj_bul,
-        exec_method.new_object.clone(),
-        exec_method.old_nullifier.clone(),
-        (),
-        exec_method.cb_com_list.clone(),
-        exec_method.proof.clone(),
-        None,
-        &vk,
-    );
+    let out =
+        <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<(), Groth16<E>, 1>(
+            &mut store.obj_bul,
+            exec_method.new_object.clone(),
+            exec_method.old_nullifier.clone(),
+            (),
+            exec_method.cb_com_list.clone(),
+            exec_method.proof.clone(),
+            None,
+            &vk,
+        );
     let s1 = start.elapsed().unwrap();
     // Server checks proof on interaction with the verification key, approves it, and stores the new object into the store
 
     let start = SystemTime::now();
 
     let res = store
-        .approve_interaction_and_store::<TestUserData2, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
-            exec_method, // output of interaction
-            PlainTikCrypto(F::from(0)), // for authenticity: verify rerandomization of key produces
+        .approve_interaction_and_store::<TestData, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
+            exec_method,          // output of interaction
+            FakeSigPrivkey::sk(), // for authenticity: verify rerandomization of key produces
             // proper tickets (here it doesn't matter)
             (),
             &store.obj_bul.clone(),
@@ -423,21 +367,15 @@ fn main() {
     let start = SystemTime::now();
 
     let exec_method2 = u
-        .interact::<Poseidon<2>, (), (), (), (), F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, UOVObjStore<F>, 1>(
+        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, Cr, Groth16<E>, UOVObjStore<F>, 1>(
             &mut rng,
             interaction.clone(),
-            [PlainTikCrypto(F::from(0))],
-            (
-                store.obj_bul
-                    .get_signature_of(&u.commit::<Poseidon<2>>())
-                    .unwrap(),
-                store.obj_bul.get_pubkey(),
-            ),
+            [FakeSigPubkey::pk()],
+            &store.obj_bul,
             true,
             &pk,
             (),
             (),
-            false,
             true,
         )
         .unwrap();
@@ -452,29 +390,26 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing...");
     let start = SystemTime::now();
 
-    let out = <UOVObjStore<F> as UserBul<F, TestUserData2>>::verify_interact_and_append::<
-        (),
-        Groth16<E>,
-        1,
-    >(
-        &mut store.obj_bul,
-        exec_method2.new_object.clone(),
-        exec_method2.old_nullifier.clone(),
-        (),
-        exec_method2.cb_com_list.clone(),
-        exec_method2.proof.clone(),
-        None,
-        &vk,
-    );
+    let out =
+        <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<(), Groth16<E>, 1>(
+            &mut store.obj_bul,
+            exec_method2.new_object.clone(),
+            exec_method2.old_nullifier.clone(),
+            (),
+            exec_method2.cb_com_list.clone(),
+            exec_method2.proof.clone(),
+            None,
+            &vk,
+        );
 
     let s1 = start.elapsed().unwrap();
     let start = SystemTime::now();
 
     // The server approves the interaction and stores it again
     let res = store
-        .approve_interaction_and_store::<TestUserData2, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
             exec_method2,
-            PlainTikCrypto(F::from(0)),
+            FakeSigPrivkey::sk(),
             (),
             &store.obj_bul.clone(),
             store.obj_bul.get_pubkey(),
@@ -499,61 +434,21 @@ fn main() {
 
     println!("[USER] Scanning a ticket... ");
     // Setup a scan for a single callback (the first one in the list)
-    let ps = PubScanArgs {
-        // Create the public scanning arguments
-        memb_pub: [store.callback_bul.get_pubkey()], // Public membership data (pubkey)
-        is_memb_data_const: true,                    // it is constant
-        nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey()], // Public nonmemb data (pubkey for range sigs)
-        is_nmemb_data_const: true,
-        cur_time: store.callback_bul.nmemb_bul.get_epoch(), // *current* time as of this proof generation
-        bulletin: store.callback_bul.clone(),               // bulletin handle
-        cb_methods: cb_methods.clone(), // Vec of callbacks (used to check which method to call)
-    };
-
-    let cb = u.get_cb(0); // First ticket in the
-                          // list!
-    let tik: PlainTikCrypto<F> = cb.get_ticket();
-
-    let prs = PrivScanArgs {
-        // Private arguments
-        priv_n_tickets: [
-            cb, // The callback ticket (should be private)
-        ],
-        post_times: [store
-            .callback_bul
-            .verify_in(tik.clone())
-            .map_or(F::from(0), |(_, p2)| p2)], // Get
-        // *server* post time for ticket if it exists
-        enc_args: [store
-            .callback_bul
-            .verify_in(tik.clone())
-            .map_or(F::from(0), |(p1, _)| p1)], // Get
-        // server posted encrypted arguments for ticket
-        memb_priv: [store
-            .callback_bul
-            .get_memb_witness(&tik)
-            .unwrap_or_default()], // Signature on ticket
-        nmemb_priv: [store
-            .callback_bul
-            .nmemb_bul
-            .get_nmemb_witness(&tik)
-            .unwrap_or_default()], // Signature on
-                                   // ticket
-    };
 
     let start = SystemTime::now();
 
-    let scan_one = u.interact::<Poseidon<2>, PubScan, PubScanVar, PrivScan, PrivScanVar, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, UOVObjStore<F>, 0>
-        (&mut rng, cb_interaction.clone(), [],  // Note cb_interaction: the scan is still an
-            // interaction
-            (
-                store
-                    .obj_bul.get_signature_of(&u.commit::<Poseidon<2>>())
-                    .unwrap(),
-                store.obj_bul.get_pubkey(),
-            ),
+    let (ps, scan_one) = u.scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, UOVCallbackStore<F>, Groth16<E>, UOVObjStore<F>, 1>
+        (&mut rng,
+            &store.obj_bul,
             true,
-        &pks, ps.clone(), prs, true, true).unwrap();
+            &pks,
+            &store.callback_bul,
+            (true, true),
+            store.callback_bul.get_epoch(),
+            cb_methods.clone(),
+            true,
+        )
+        .unwrap();
     println!(
         "\t (time) Scanning (interaction proving) time: {:?}",
         start.elapsed().unwrap()
@@ -564,7 +459,7 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing scan...");
     let start = SystemTime::now();
 
-    let out = <UOVObjStore<F> as UserBul<F, TestUserData2>>::verify_interact_and_append::<
+    let out = <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<
         PubScan,
         Groth16<E>,
         0,
@@ -584,9 +479,9 @@ fn main() {
     let start = SystemTime::now();
 
     let res = store
-        .approve_interaction_and_store::<TestUserData2, Groth16<E>, PubScan, UOVObjStore<F>, Poseidon<2>, 0>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, PubScan, UOVObjStore<F>, Poseidon<2>, 0>(
             scan_one,
-            PlainTikCrypto(F::from(0)),
+            FakeSigPrivkey::sk(),
             ps.clone(),
             &store.obj_bul.clone(),
             store.obj_bul.get_pubkey(),
@@ -616,7 +511,7 @@ fn main() {
         .call(
             store.cb_tickets[1][0].0.clone(),
             F::from(41),
-            PlainTikCrypto(F::from(0)),
+            FakeSigPrivkey::sk(),
         )
         .unwrap();
     store
@@ -629,51 +524,22 @@ fn main() {
     println!("[USER] Scanning the second ticket... ");
 
     // Setup a scan for the second callback
-    let ps = PubScanArgs {
-        memb_pub: [store.callback_bul.get_pubkey()],
-        is_memb_data_const: true,
-        nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey()],
-        is_nmemb_data_const: true,
-        cur_time: store.callback_bul.get_epoch(),
-        bulletin: store.callback_bul.clone(),
-        cb_methods: cb_methods.clone(),
-    };
-
-    let cb = u.get_cb(1);
-    let tik: PlainTikCrypto<F> = cb.get_ticket();
-
-    let prs = PrivScanArgs {
-        priv_n_tickets: [cb],
-        post_times: [store
-            .callback_bul
-            .verify_in(tik.clone())
-            .map_or(F::from(0), |(_, p2)| p2)],
-        enc_args: [store
-            .callback_bul
-            .verify_in(tik.clone())
-            .map_or(F::from(0), |(p1, _)| p1)],
-        memb_priv: [store
-            .callback_bul
-            .get_memb_witness(&tik)
-            .unwrap_or_default()],
-        nmemb_priv: [store
-            .callback_bul
-            .get_nmemb_witness(&tik)
-            .unwrap_or_default()],
-    };
 
     let start = SystemTime::now();
 
-    let scan_second = u.interact::<Poseidon<2>, PubScan, PubScanVar, PrivScan, PrivScanVar, F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, UOVObjStore<F>, 0>
-        (&mut rng, cb_interaction.clone(), [],
-            (
-                store
-                    .obj_bul.get_signature_of(&u.commit::<Poseidon<2>>())
-                    .unwrap(),
-                store.obj_bul.get_pubkey(),
-            ),
+    let (ps, scan_second) = u
+        .scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, UOVCallbackStore<F>, Groth16<E>, UOVObjStore<F>, 1>(
+            &mut rng,
+            &store.obj_bul,
             true,
-        &pks, ps.clone(), prs, true, true).unwrap();
+            &pks,
+            &store.callback_bul,
+            (true, true),
+            store.callback_bul.get_epoch(),
+            cb_methods.clone(),
+            true,
+        )
+        .unwrap();
 
     println!("\t (time) Scanning time: {:?}", start.elapsed().unwrap());
     println!("[USER] Scanning the second ticket... {:o} \n\n", u);
@@ -681,7 +547,7 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing scan...");
     let start = SystemTime::now();
 
-    let out = <UOVObjStore<F> as UserBul<F, TestUserData2>>::verify_interact_and_append::<
+    let out = <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<
         PubScan,
         Groth16<E>,
         0,
@@ -700,9 +566,9 @@ fn main() {
     let start = SystemTime::now();
 
     let res = store
-        .approve_interaction_and_store::<TestUserData2, Groth16<E>, PubScan, UOVObjStore<F>, Poseidon<2>, 0>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, PubScan, UOVObjStore<F>, Poseidon<2>, 0>(
             scan_second,
-            PlainTikCrypto(F::from(0)),
+            FakeSigPrivkey::sk(),
             ps.clone(),
             &store.obj_bul.clone(),
             store.obj_bul.get_pubkey(),

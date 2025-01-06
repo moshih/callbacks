@@ -24,14 +24,21 @@
 //! with a [`ServiceProvider`](`generic::service::ServiceProvider`) by making a forum post, and
 //! update their object stored on a [`UserBul`](`generic::bulletin::UserBul`). In the future, the
 //! service may then call a callback by interacting with a
-//! [`CallbackBulletin`](`generic::bulletin::CallbackBulletin`).
+//! [`CallbackBul`](`generic::bulletin::CallbackBul`).
 //!
 //! Outside of the generic types and traits, [`impls`] contains some default and simple implementations of the
 //! previous traits and those described in the paper. It contains some implementations of
 //! [`UserData`](`generic::user::UserData`) for simple objects, along with some data structures for
 //! the bulletins, such as a [`SigObjStore`](`impls::centralized::ds::sigstore::SigObjStore`) and
 //! some more cryptography.
-
+//!
+//! # Examples
+//!
+//! For a first example, see `examples/simple.rs`, which gives a walkthrough of a single
+//! centralized setting.
+//!
+//! More examples are coming! (when?)
+#![deny(missing_docs)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(associated_type_defaults)]
@@ -44,4 +51,165 @@ pub mod impls;
 #[doc(hidden)]
 pub mod util;
 
-pub use zk_object::{scannable_zk_object, zk_object};
+/// Struct macro to construct in-circuit representations, derive `UserData`, and add necessary
+/// implementations for scanning.
+///
+/// This macro takes in one argument (the field), and a second optional argument (the in-circuit
+/// representation). If the second argument is not provided, this macro will construct an
+/// in-circuit representation of the structure.
+///
+/// ```rust
+/// use ark_bls12_381::Fr;
+/// use zk_callbacks::scannable_zk_object;
+///
+/// #[scannable_zk_object(Fr)]
+/// #[derive(Default)]
+/// struct Data {
+///     karma: Fr,
+///     is_banned: bool,
+///     reputation: u8,
+/// }
+/// ```
+///
+/// If an in-circuit representation already exists, one may use the additional argument to pass
+/// this in.
+///
+/// ```rust
+/// # use ark_bls12_381::Fr;
+/// # use zk_callbacks::scannable_zk_object;
+/// #
+/// # use ark_r1cs_std::{
+/// #     alloc::{AllocVar, AllocationMode},
+/// #     boolean::Boolean,
+/// #     convert::ToConstraintFieldGadget,
+/// #     prelude::UInt8,
+/// # };
+/// # use ark_relations::{
+/// #     ns,
+/// #     r1cs::{Namespace, SynthesisError},
+/// # };
+/// # use std::borrow::Borrow;
+/// # use ark_r1cs_std::fields::fp::FpVar;
+/// #[scannable_zk_object(Fr, DataVar)]
+/// #[derive(Default)]
+/// struct Data {
+///     karma: Fr,
+///     is_banned: bool,
+///     reputation: u8,
+/// }
+///
+/// #[derive(Clone)]
+/// struct DataVar {
+///     karma: FpVar<Fr>,
+///     is_banned: Boolean<Fr>,
+///     reputation: UInt8<Fr>,
+/// }
+///
+/// impl AllocVar<Data, Fr> for DataVar {
+///     fn new_variable<K: Borrow<Data>>(
+///         cs: impl Into<Namespace<Fr>>,
+///         f: impl FnOnce() -> Result<K, SynthesisError>,
+///         mode: AllocationMode
+///     ) -> Result<Self, SynthesisError> {
+///         let ns = cs.into();
+///         let cs = ns.cs();
+///         let res=  f();
+///         res.and_then(|rec| {
+///             let rec = rec.borrow();
+///             let karma = FpVar::new_variable(ns!(cs, "karma"), || Ok(rec.karma), mode)?;
+///             let is_banned = Boolean::new_variable(ns!(cs, "is_banned"), || Ok(rec.is_banned),
+///             mode)?;
+///
+///             Ok(Self {
+///                 karma,
+///                 is_banned,
+///                 reputation: UInt8::constant(0),
+///             })
+///         })
+///     }
+/// }
+/// ```
+pub use zk_object::scannable_zk_object;
+
+/// Struct macro to construct in-circuit representations and derive `UserData`.
+///
+/// This macro takes in one argument (the field), and a second optional argument (the in-circuit
+/// representation). If the second argument is not provided, this macro will construct an
+/// in-circuit representation of the structure.
+///
+/// Do not use this macro if you also need to scan user objects. While this allows for more
+/// flexibility with types, these objects will not necessarily implement conditional selection or
+/// equality, and therefore they cannot be used when calling `scan_callbacks`.
+///
+/// ```rust
+/// use ark_bls12_381::Fr;
+/// use zk_callbacks::zk_object;
+///
+/// #[zk_object(Fr)]
+/// #[derive(Default)]
+/// struct Data {
+///     karma: Fr,
+///     is_banned: bool,
+///     reputation: u8,
+/// }
+/// ```
+///
+/// If an in-circuit representation already exists, one may use the additional argument to pass
+/// this in.
+///
+/// ```rust
+/// # use ark_bls12_381::Fr;
+/// # use zk_callbacks::zk_object;
+/// #
+/// # use ark_r1cs_std::{
+/// #     alloc::{AllocVar, AllocationMode},
+/// #     boolean::Boolean,
+/// #     convert::ToConstraintFieldGadget,
+/// #     prelude::UInt8,
+/// # };
+/// # use ark_relations::{
+/// #     ns,
+/// #     r1cs::{Namespace, SynthesisError},
+/// # };
+/// # use std::borrow::Borrow;
+/// # use ark_r1cs_std::fields::fp::FpVar;
+/// #[zk_object(Fr, DataVar)]
+/// #[derive(Default)]
+/// struct Data {
+///     karma: Fr,
+///     is_banned: bool,
+///     reputation: u8,
+/// }
+///
+/// #[derive(Clone)]
+/// struct DataVar {
+///     karma: FpVar<Fr>,
+///     is_banned: Boolean<Fr>,
+///     reputation: UInt8<Fr>,
+/// }
+///
+/// impl AllocVar<Data, Fr> for DataVar {
+///     fn new_variable<K: Borrow<Data>>(
+///         cs: impl Into<Namespace<Fr>>,
+///         f: impl FnOnce() -> Result<K, SynthesisError>,
+///         mode: AllocationMode
+///     ) -> Result<Self, SynthesisError> {
+///         let ns = cs.into();
+///         let cs = ns.cs();
+///         let res=  f();
+///         res.and_then(|rec| {
+///             let rec = rec.borrow();
+///             let karma = FpVar::new_variable(ns!(cs, "karma"), || Ok(rec.karma), mode)?;
+///             let is_banned = Boolean::new_variable(ns!(cs, "is_banned"), || Ok(rec.is_banned),
+///             mode)?;
+///
+///             Ok(Self {
+///                 karma,
+///                 is_banned,
+///                 reputation: UInt8::constant(0),
+///             })
+///         })
+///     }
+/// }
+/// ```
+pub use zk_object::zk_object;

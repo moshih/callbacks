@@ -78,6 +78,7 @@ pub struct ZKFieldsVar<F: PrimeField> {
 }
 
 impl<F: PrimeField> ZKFields<F> {
+    /// Serialize the bookkeeping fields into a vector of field elements.
     pub fn serialize(&self) -> Vec<Ser<F>> {
         [
             self.nul.to_field_elements().unwrap(),
@@ -96,7 +97,8 @@ impl<F: PrimeField> ZKFields<F> {
 }
 
 impl<F: PrimeField> ZKFieldsVar<F> {
-    pub(crate) fn serialize(&self) -> Result<Vec<SerVar<F>>, SynthesisError> {
+    /// Serialize the bookkeeping fields in-circuit.
+    pub fn serialize(&self) -> Result<Vec<SerVar<F>>, SynthesisError> {
         Ok([
             self.nul.to_constraint_field()?,
             self.com_rand.to_constraint_field()?,

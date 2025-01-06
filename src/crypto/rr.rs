@@ -8,7 +8,7 @@ use rand::{CryptoRng, RngCore};
 /// `r * sk`.
 ///
 /// One example of this is ECDSA, where the private key is a scalar x and the private key is a
-/// point [x]G. A rerandomized pair is then (rx, [rx]G).
+/// point xG. A rerandomized pair is then (rx, (rx)G).
 ///
 /// Here, [`RRSigner`] is a secret key with the corresponding verifying key `V`.
 /// # Example (BLS Signatures):

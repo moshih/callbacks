@@ -1125,6 +1125,7 @@ dependencies = [
  "ark-relations",
  "ark-serialize",
  "ark-snark",
+ "blake2",
  "circom_poseidon",
  "folding-schemes",
  "nalgebra",

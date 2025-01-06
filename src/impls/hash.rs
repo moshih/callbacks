@@ -15,6 +15,9 @@ use ark_relations::r1cs::SynthesisError;
 #[doc(cfg(feature = "circposeidon"))]
 use circom_poseidon::get_poseidon_params;
 
+/// The poseidon hash.
+///
+/// See the implementation of [`HasherZK`] and [`FieldHash`] for Poseidon.
 #[derive(Clone, Default, Debug)]
 pub struct Poseidon<const R: usize>();
 
@@ -38,6 +41,10 @@ impl<F: PrimeField + Absorb, const R: usize> HasherZK<F> for Poseidon<R> {
 
 impl<F: PrimeField + Absorb, const R: usize> FieldHash<F> for Poseidon<R> {}
 
+/// A poseidon hash which works with Circom.
+///
+/// Note that this hash still doesn't natively work with Circom; a specialized `ArkPoseidon` must
+/// be used in Circom as well.
 #[cfg(feature = "circposeidon")]
 #[cfg(any(feature = "circposeidon", doc))]
 #[doc(cfg(feature = "circposeidon"))]

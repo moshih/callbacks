@@ -7,7 +7,7 @@ use crate::{
             ExecMethodCircuit, Interaction, ProvePredInCircuit, ProvePredicateCircuit,
             SingularPredicate,
         },
-        object::{Com, ComVar, Nul, Ser, SerVar, ZKFields, ZKFieldsVar},
+        object::{Com, ComVar, Nul, Ser, SerVar, Time, ZKFields, ZKFieldsVar},
     },
 };
 use ark_crypto_primitives::sponge::Absorb;
@@ -30,6 +30,8 @@ use crate::generic::{
     bulletin::PublicCallbackBul,
     scan::{get_scan_interaction, PrivScanArgs, PrivScanArgsVar, PubScanArgs, PubScanArgsVar},
 };
+
+use crate::generic::interaction::Callback;
 
 /// A trait that captures data which can be placed inside a user.
 ///
@@ -293,7 +295,11 @@ pub struct User<F: PrimeField + Absorb, U: UserData<F>> {
 
     /// A list of callbacks, serialized and stored. This may also be ignored (the [`User::get_cb`]
     /// function should be used instead.
-    pub callbacks: Vec<Vec<u8>>,
+    pub(crate) callbacks: Vec<Vec<u8>>,
+
+    pub(crate) scan_index: Option<usize>,
+
+    pub(crate) in_progress_cbs: Vec<Vec<u8>>,
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> std::fmt::Octal for User<F, U> {
@@ -454,6 +460,8 @@ where
                 is_ingest_over: true,
             },
             callbacks: vec![],
+            scan_index: None,
+            in_progress_cbs: vec![],
         }
     }
 
@@ -478,7 +486,7 @@ where
     /// # use ark_r1cs_std::prelude::Boolean;
     /// # use zk_callbacks::impls::hash::Poseidon;
     /// # use zk_callbacks::impls::dummy::DummyStore;
-    /// # use zk_callbacks::impls::centralized::crypto::{PlainTikCrypto};
+    /// # use zk_callbacks::impls::centralized::crypto::{FakeSigPubkey, NoSigOTP};
     /// # type Groth = Groth16<E>;
     ///#  #[zk_object(Fr)]
     ///#  #[derive(Default)]
@@ -526,17 +534,17 @@ where
     ///
     ///     let mut rng = thread_rng();
     ///
-    ///     let (pk, vk) = int.generate_keys::<Poseidon<2>, Groth, PlainTikCrypto<Fr>, DummyStore>(&mut rng, Some(()), None, false);
+    ///     let (pk, vk) = int.generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), None, false);
     ///
     ///     let mut u = User::create(Data { karma: Fr::from(0), is_banned: false }, &mut rng);
     ///
     ///     // Execute the method, and append a single callback to the user callback list. This
     ///     // callback is a ticket associated to `cb`.
-    ///     let _ = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, PlainTikCrypto<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [PlainTikCrypto(Fr::from(0))], ((), ()), true, &pk, (), (), false).unwrap();
+    ///     let _ = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), (), false).unwrap();
     ///
     ///     // Get the first callback stored in the user.
     ///     let first_callback = u.get_cb
-    ///         ::<Fr, PlainTikCrypto<Fr>>
+    ///         ::<Fr, NoSigOTP<Fr>>
     ///     (0);
     ///
     ///     // Ensure the callback is the correct callback method.
@@ -550,6 +558,196 @@ where
         CallbackCom::deserialize_compressed(&*self.callbacks[index]).unwrap()
     }
 
+    /// Get the total number of callbacks stored within the user object.
+    ///
+    /// These are the outstanding callbacks which have been handed to some service.
+    pub fn num_outstanding_callbacks(&self) -> usize {
+        self.callbacks.len()
+    }
+
+    /// Get the user scanning status.
+    pub fn is_scanning(&self) -> bool {
+        self.scan_index.is_some()
+    }
+
+    /// Execute a method, add on callbacks, and produce a proof to a server.
+    ///
+    /// # Note
+    ///
+    /// Note that for most scenarios, [`exec_method_create_cb`](`User::exec_method_create_cb`) and
+    /// [`scan_callbacks`](`User::scan_callbacks`) will be
+    /// enough. These are specialized versions of `interact`, which are **safe; they perform additional safeguard checks**. If possible use these
+    /// functions.
+    ///
+    /// # Description
+    ///
+    /// This is the main function of interest in zk_callbacks, which allows a user to "interact"
+    /// with a server. When a user interacts (by making a post, editing a page, etc.), the user
+    /// will produce a proof to the service, which the service verifies.
+    ///
+    /// To do so, the user first executes a method `U -> U'`, and then produces a proof of
+    ///* `pred(U, U', args) == 1`
+    ///* `U` is in the user bulletin
+    ///* The callback tickets [cb, ... cb] have been appended to the user
+    ///
+    /// A simple example interaction can be the following:
+    ///* Method: `new_user.visits_per_day = old_user.visits_per_day + 1`
+    ///* Predicate: `new_user.visits_per_day == old_user.visits_per_day + 1
+    ///&& new_user.reputation == old_user.reputation
+    ///&& new_user.reputation > 50`
+    ///* A single callback: `user.reputation += args`
+    ///
+    ///Every time a user goes to make a post on a website, it first increases its visits per day,
+    ///and then produces a proof that it has a proper reputation and has increased the number of
+    ///visits. Finally, the user hands a callback ticket to the website to update the reputation.
+    ///
+    /// This function takes in an [`Interaction`] and produces the [`ExecutedMethod`] output, which
+    /// contains the proof, callbacks to give to the service, new updated user commitment to give
+    /// to the bulletin, and auxiliary proof data (nullifier, callback commitments).
+    ///
+    /// # Generics
+    ///- `H`: the hash used for commitments. For example, it may be Poseidon or Sha256.
+    ///- `PubArgs`: The public arguments provided to the method.
+    ///- `PubArgsVar`: In-circuit representation of the public arguments, provided to the
+    ///predicate.
+    ///- `PrivArgs`: The private arguments provided to the method.
+    ///- `PrivArgsVar`: In-circuit representation of the private arguments, provided to the
+    ///predicate.
+    ///- `CBArgs`: The public arguments provided to the callback function `cb(U, CBArgs) -> U`
+    ///- `CBArgsVar`: The in-circuit representation of the public arguments provided to the
+    ///callback function, which are enforced by the callback predicate.
+    ///- `Crypto`: Authenticated encryption, which provides authenticity and confidentiality for
+    ///called callbacks.
+    ///- `Snark`: The SNARK used to produce proofs.
+    ///- `Bul`: The public user bulletin (can be a network handle to a Merkle tree, or a signature
+    ///storage system)
+    ///- `NUMCBS`: The number of callbacks being produced and added to the user.
+    ///
+    ///# Arguments
+    ///
+    ///- `&mut self`: The user being updated.
+    ///- `rng`: Random number generator. Used for generating callback tickets and updating the user
+    ///nonce.
+    ///- `method`: The interaction. Consists of a method `U -> U'`, a predicate `p(U, U') -> bool`, along with a list of callbacks.
+    ///- `rpks`: Rerandomizable public keys; these are the public keys of services. This way, the
+    ///user may then verify that the called callback has a valid signature on it (from the correct
+    ///service).
+    ///- `bul_data`: This is public and private data to prove membership of the user in the user
+    ///bulletin. For example, with a Merkle tree, the witness will be a path, while the public data
+    ///will be the Merkle root.
+    ///- `is_memb_data_const`: Is the public membership data a constant. Determines whether to load
+    ///the data as a constant or not.
+    ///- `pk`: The snark proving key. Generated by calling [`Interaction::generate_keys`]. Note
+    ///that if the membership data is constant, the keys *must* be generated that way as well.
+    ///- `pub_args`: The public arguments passed in when calling the method.
+    ///- `priv_args`: The private arguments passed in when calling the method.
+    ///- `is_scan`: Does this function affect the callbacks? Some extra checks are removed for
+    ///scanning methods which affect the callbacks. (Only set to true if necessary).
+    ///- `print_constraints`: Prints out constraint counts on proof generation.
+    ///
+    /// Note that **any method** may be executed: This includes methods which involve scanning.
+    /// Therefore, this method captures both *the creation of callbacks*, and *the scan / ingestion of
+    /// callbacks*.
+    ///
+    ///# Example
+    /// ```rust
+    /// # use zk_callbacks::zk_object;
+    /// # use zk_callbacks::generic::user::User;
+    /// # use rand::thread_rng;
+    /// # use ark_bn254::{Bn254 as E, Fr};
+    /// # use ark_r1cs_std::eq::EqGadget;
+    /// # use ark_r1cs_std::cmp::CmpGadget;
+    /// # use zk_callbacks::generic::interaction::Interaction;
+    /// # use zk_callbacks::generic::interaction::Callback;
+    /// # use zk_callbacks::generic::object::Id;
+    /// # use zk_callbacks::generic::object::Time;
+    /// # use zk_callbacks::generic::object::TimeVar;
+    /// # use ark_relations::r1cs::SynthesisError;
+    /// # use zk_callbacks::generic::user::UserVar;
+    /// # use ark_r1cs_std::fields::fp::FpVar;
+    /// # use ark_groth16::Groth16;
+    /// # use ark_r1cs_std::prelude::Boolean;
+    /// # use zk_callbacks::impls::hash::Poseidon;
+    /// # use ark_r1cs_std::prelude::UInt8;
+    /// # use zk_callbacks::impls::dummy::DummyStore;
+    /// # use ark_r1cs_std::select::CondSelectGadget;
+    /// # use zk_callbacks::impls::centralized::crypto::{FakeSigPubkey, NoSigOTP};
+    /// # type Groth = Groth16<E>;
+    /// #[zk_object(Fr)]
+    /// #[derive(Default)]
+    /// struct Data {
+    ///     pub num_visits: Fr,
+    ///     pub bad_rep: u8,
+    ///     pub last_interacted_time: Time<Fr>,
+    /// }
+    ///
+    /// fn method<'a>(old_user: &'a User<Fr, Data>, pub_time: Time<Fr>, _priv: ()) -> User<Fr, Data> {
+    ///     let mut new = old_user.clone();
+    ///     new.data.num_visits += Fr::from(1);
+    ///     new.data.last_interacted_time = pub_time;
+    ///     new
+    /// }
+    ///
+    /// fn predicate<'a>(old_user: &'a UserVar<Fr, Data>, new_user: &'a UserVar<Fr, Data>, pub_time: TimeVar<Fr>, _priv: ()) -> Result<Boolean<Fr>, SynthesisError> {
+    ///     let o1 = old_user.data.bad_rep.is_eq(&new_user.data.bad_rep)?;
+    ///     let o2 = old_user.data.bad_rep.is_le(&UInt8::constant(40))?;
+    ///     let o3 = new_user.data.num_visits.is_eq(&(old_user.data.num_visits.clone() + FpVar::Constant(Fr::from(1))))?;
+    ///     let o4 = new_user.data.last_interacted_time.is_eq(&pub_time)?;
+    ///     Ok(o1 & o2 & o3 & o4)
+    /// }
+    ///
+    /// fn callback<'a>(old_user: &'a User<Fr, Data>, args: Fr) -> User<Fr, Data> {
+    ///     let mut u2 = old_user.clone();
+    ///     if args == Fr::from(0) {
+    ///         u2.data.bad_rep;
+    ///     } else {
+    ///         u2.data.bad_rep += 10;
+    ///     }
+    ///     u2.clone()
+    /// }
+    ///
+    /// fn enforce_callback<'a>(old_user: &'a UserVar<Fr, Data>, args: FpVar<Fr>) -> Result<UserVar<Fr, Data>, SynthesisError> {
+    ///     let mut u = old_user.clone();
+    ///     u.data.bad_rep =
+    ///     UInt8::conditionally_select(
+    ///         &args.is_eq(&FpVar::Constant(Fr::from(0)))?,
+    ///         &u.data.bad_rep,
+    ///         &u.data.bad_rep.wrapping_add(&UInt8::constant(10))
+    ///     )?;
+    ///     Ok(u)
+    /// }
+    ///
+    ///
+    /// fn main () {
+    ///     let cb = Callback {
+    ///         method_id: Id::from(0),
+    ///         expirable: false,
+    ///         expiration: Time::from(10),
+    ///         method: callback,
+    ///         predicate: enforce_callback
+    ///     };
+    ///
+    ///     let int = Interaction {
+    ///         meth: (method, predicate),
+    ///         callbacks: [cb.clone()],
+    ///     };
+    ///
+    ///     let mut rng = thread_rng();
+    ///
+    ///     let (pk, vk) = int.generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), None, false);
+    ///
+    ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
+    ///
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false, false).unwrap();
+    ///
+    ///     // User has been updated according to the method
+    ///     assert_eq!(u.data.num_visits, Fr::from(1));
+    ///     assert_eq!(u.data.last_interacted_time, Time::from(20));
+    ///     // User has a single callback corresponding to the callback added
+    ///     // The new commitment is the commitment of the user
+    ///     assert_eq!(u.commit::<Poseidon<2>>(), exec_meth.new_object);
+    /// }
+    /// ```
     pub fn interact<
         H: FieldHash<F>,
         PubArgs: Clone + std::fmt::Debug,
@@ -577,7 +775,7 @@ where
             NUMCBS,
         >,
         rpks: [Crypto::SigPK; NUMCBS],
-        bul_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        bul_data: (Bul::MembershipPub, Bul::MembershipWitness),
         is_memb_data_const: bool,
         pk: &Snark::ProvingKey,
         pub_args: PubArgs,
@@ -657,14 +855,14 @@ where
             priv_old_user: self.clone(),
             priv_new_user: new_user.clone(),
             priv_issued_callbacks: issued_callbacks,
-            priv_bul_membership_witness: bul_data.0,
+            priv_bul_membership_witness: bul_data.1,
             priv_args,
 
             pub_new_com: out_commit,
             pub_old_nul: out_nul,
             pub_issued_callback_coms: issued_cb_coms,
             pub_args,
-            pub_bul_membership_data: bul_data.1,
+            pub_bul_membership_data: bul_data.0,
             bul_memb_is_const: is_memb_data_const,
 
             associated_method: method,
@@ -696,6 +894,57 @@ where
         })
     }
 
+    /// A specialization of the [`User::interact`] function.
+    ///
+    /// Here, a user may execute a method *which does not scan or change any callback-related data*.
+    /// Along with this, a user may also append a number of callbacks. See [`User::interact`] for
+    /// details and more documentation.
+    ///
+    /// For example, the prior example in [`User::interact`] may be replaced with
+    /// [`User::exec_method_create_cb`], as the method only changes `num_visits` and
+    /// `last_interacted_time`, and no zk field values.
+    ///
+    /// Note that this function just calls interact with `is_scan = false`. Additionally, the
+    /// arguments are not the same; a `Bul` is passed in, and membership data is retrieved from the
+    /// bulletin.
+    ///
+    /// # Generics
+    ///- `H`: the hash used for commitments. For example, it may be Poseidon or Sha256.
+    ///- `PubArgs`: The public arguments provided to the method.
+    ///- `PubArgsVar`: In-circuit representation of the public arguments, provided to the
+    ///predicate.
+    ///- `PrivArgs`: The private arguments provided to the method.
+    ///- `PrivArgsVar`: In-circuit representation of the private arguments, provided to the
+    ///predicate.
+    ///- `CBArgs`: The public arguments provided to the callback function `cb(U, CBArgs) -> U`
+    ///- `CBArgsVar`: The in-circuit representation of the public arguments provided to the
+    ///callback function, which are enforced by the callback predicate.
+    ///- `Crypto`: Authenticated encryption, which provides authenticity and confidentiality for
+    ///called callbacks.
+    ///- `Snark`: The SNARK used to produce proofs.
+    ///- `Bul`: The public user bulletin (can be a network handle to a Merkle tree, or a signature
+    ///storage system)
+    ///- `NUMCBS`: The number of callbacks being produced and added to the user.
+    ///
+    ///# Arguments
+    ///
+    ///- `&mut self`: The user being updated.
+    ///- `rng`: Random number generator. Used for generating callback tickets and updating the user
+    ///nonce.
+    ///- `method`: The interaction. Consists of a method `U -> U'`, a predicate `p(U, U') -> bool`, along with a list of callbacks.
+    ///- `rpks`: Rerandomizable public keys; these are the public keys of services. This way, the
+    ///user may then verify that the called callback has a valid signature on it (from the correct
+    ///service).
+    ///- `bul`: This is an interface to the public bulletin. For example, it may be some network
+    ///handle to retrieve bulletin data, such as a Merkle tree. See the documentation on
+    ///[`PublicUserBul`] for more details.
+    ///- `is_memb_data_const`: Is the public membership data a constant. Determines whether to load
+    ///the data as a constant or not.
+    ///- `pk`: The snark proving key. Generated by calling [`Interaction::generate_keys`]. Note
+    ///that if the membership data is constant, the keys *must* be generated that way as well.
+    ///- `pub_args`: The public arguments passed in when calling the method.
+    ///- `priv_args`: The private arguments passed in when calling the method.
+    ///- `print_constraints`: Prints out constraint counts on proof generation.
     pub fn exec_method_create_cb<
         H: FieldHash<F>,
         PubArgs: Clone + std::fmt::Debug,
@@ -723,13 +972,17 @@ where
             NUMCBS,
         >,
         rpks: [Crypto::SigPK; NUMCBS],
-        bul_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        bul: &Bul,
         is_memb_data_const: bool,
         pk: &Snark::ProvingKey,
         pub_args: PubArgs,
         priv_args: PrivArgs,
         print_constraints: bool,
     ) -> Result<ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>, SynthesisError> {
+        assert!(self.scan_index.is_none());
+
+        let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
+
         self.interact::<H, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, Crypto, Snark, Bul, NUMCBS>(
             rng,
             method,
@@ -744,11 +997,186 @@ where
         )
     }
 
+    /// Execute a scan method and produces a proof.
+    ///
+    /// This function scans `NUMSCANS` callbacks and checks if those callbacks were called or not.
+    /// If called, the associated callback function will be applied to the user.
+    ///
+    /// This function is a wrapper around `interact`, which just performs a specific interaction given
+    /// by [`get_scan_interaction`].
+    ///
+    /// # Warning!
+    ///
+    /// The scan **will only complete** if the scan is done *incrementally*. For example, if a user
+    /// has 3 callbacks, the user may scan `[0]`, and then `[1, 2]`, which will complete the scan.
+    ///
+    /// However, going over by doing `[0, 1]`, `[2, 0]` will fail (even if it wraps around
+    /// properly). Note that also attempting something like `[0, 2]` and then `[1]` will fail;
+    /// callbacks have an inherent order from when they were assigned.
+    ///
+    /// # Note
+    ///
+    /// This function not only returns the `ExecutedMethod`, but it also returns a
+    /// `PublicScanArgs`. This return value corresponds to the public arguments necessary to verify
+    /// the proof produced. Specifically, this is the `PubArgs` passed to the interaction call
+    /// inside this scan function.
+    ///
+    /// # Generics
+    ///- `H`: the hash used for commitments. For example, it may be Poseidon or Sha256.
+    ///- `CBArgs`: The public arguments provided to the callback function `cb(U, CBArgs) -> U`
+    ///- `CBArgsVar`: The in-circuit representation of the public arguments provided to the
+    ///callback function, which are enforced by the callback predicate.
+    ///- `Crypto`: Authenticated encryption, which provides authenticity and confidentiality for
+    ///called callbacks.
+    ///- `CBul`: The public callback bulletin (can be a network handle to a signature store or
+    /// Merkle tree).
+    ///- `Snark`: The SNARK used to produce proofs.
+    ///- `Bul`: The public user bulletin (can be a network handle to a Merkle tree, or a signature
+    ///storage system)
+    ///- `NUMSCANS`: The number of callbacks being *scanned*.
+    ///
+    ///# Arguments
+    ///
+    ///- `&mut self`: The user being updated.
+    ///- `rng`: Random number generator. Used for generating callback tickets and updating the user
+    ///nonce.
+    ///- `bul`: A handle to the user bulletin; It could be a Merkle tree of commitments, or a
+    ///signature store.
+    ///- `is_memb_data_const`: Is the public membership data a constant. Determines whether to load
+    ///the data as a constant or not.
+    ///- `pk`: The snark proving key. Generated by calling [`Interaction::generate_keys`]. Note
+    ///that if the membership data is constant, the keys *must* be generated that way as well.
+    ///- `cbul`: The public callback bulletin.
+    ///- `is_memb_nmemb_data_const`: Is
+    ///  1. The public membership data *for a callback* constant?
+    ///  2. The public *non*membership data *for a callback* constant?
+    ///The first element in the tuple is for membership, while the second element is for
+    ///nonmembership.
+    ///- `cur_time`: The time at which the scan occurs.
+    ///- `cb_methods`: A list of callbacks used to produce the proof.
+    ///- `print_constraints`: Prints out constraint counts on proof generation.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use zk_callbacks::zk_object;
+    /// # use zk_callbacks::generic::user::User;
+    /// # use rand::thread_rng;
+    /// # use ark_bn254::{Bn254 as E, Fr};
+    /// # use ark_r1cs_std::eq::EqGadget;
+    /// # use ark_r1cs_std::cmp::CmpGadget;
+    /// # use zk_callbacks::generic::interaction::Interaction;
+    /// # use zk_callbacks::generic::interaction::Callback;
+    /// # use zk_callbacks::generic::object::Id;
+    /// # use zk_callbacks::generic::object::Time;
+    /// # use zk_callbacks::generic::object::TimeVar;
+    /// # use ark_relations::r1cs::SynthesisError;
+    /// # use zk_callbacks::generic::user::UserVar;
+    /// # use ark_r1cs_std::fields::fp::FpVar;
+    /// # use ark_groth16::Groth16;
+    /// # use ark_r1cs_std::prelude::Boolean;
+    /// # use zk_callbacks::generic::bulletin::UserBul;
+    /// # use zk_callbacks::impls::hash::Poseidon;
+    /// # use ark_r1cs_std::prelude::UInt8;
+    /// # use zk_callbacks::impls::dummy::DummyStore;
+    /// # use zk_callbacks::generic::scan::get_scan_interaction;
+    /// # use zk_callbacks::generic::scan::PubScanArgs;
+    /// # use ark_r1cs_std::select::CondSelectGadget;
+    /// # use zk_callbacks::impls::centralized::crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP};
+    /// # use zk_callbacks::scannable_zk_object;
+    /// # type Groth = Groth16<E>;
+    ///
+    /// type PubScan = PubScanArgs<Fr, Data, Fr, FpVar<Fr>, NoSigOTP<Fr>, DummyStore, 1>;
+    /// #[scannable_zk_object(Fr)]
+    /// #[derive(Default)]
+    /// struct Data {
+    ///     pub num_visits: Fr,
+    ///     pub bad_rep: u8,
+    ///     pub last_interacted_time: Time<Fr>,
+    /// }
+    ///
+    /// fn method<'a>(old_user: &'a User<Fr, Data>, pub_time: Time<Fr>, _priv: ()) -> User<Fr, Data> {
+    ///     let mut new = old_user.clone();
+    ///     new.data.num_visits += Fr::from(1);
+    ///     new.data.last_interacted_time = pub_time;
+    ///     new
+    /// }
+    ///
+    /// fn predicate<'a>(old_user: &'a UserVar<Fr, Data>, new_user: &'a UserVar<Fr, Data>, pub_time: TimeVar<Fr>, _priv: ()) -> Result<Boolean<Fr>, SynthesisError> {
+    ///     let o1 = old_user.data.bad_rep.is_eq(&new_user.data.bad_rep)?;
+    ///     let o2 = old_user.data.bad_rep.is_le(&UInt8::constant(40))?;
+    ///     let o3 = new_user.data.num_visits.is_eq(&(old_user.data.num_visits.clone() + FpVar::Constant(Fr::from(1))))?;
+    ///     let o4 = new_user.data.last_interacted_time.is_eq(&pub_time)?;
+    ///     Ok(o1 & o2 & o3 & o4)
+    /// }
+    ///
+    /// fn callback<'a>(old_user: &'a User<Fr, Data>, args: Fr) -> User<Fr, Data> {
+    ///     let mut u2 = old_user.clone();
+    ///     if args == Fr::from(0) {
+    ///         u2.data.bad_rep;
+    ///     } else {
+    ///         u2.data.bad_rep += 10;
+    ///     }
+    ///     u2.clone()
+    /// }
+    ///
+    /// fn enforce_callback<'a>(old_user: &'a UserVar<Fr, Data>, args: FpVar<Fr>) -> Result<UserVar<Fr, Data>, SynthesisError> {
+    ///     let mut u = old_user.clone();
+    ///     u.data.bad_rep =
+    ///     UInt8::conditionally_select(
+    ///         &args.is_eq(&FpVar::Constant(Fr::from(0)))?,
+    ///         &u.data.bad_rep,
+    ///         &u.data.bad_rep.wrapping_add(&UInt8::constant(10))
+    ///     )?;
+    ///     Ok(u)
+    /// }
+    ///
+    ///
+    /// fn main () {
+    ///     let cb = Callback {
+    ///         method_id: Id::from(0),
+    ///         expirable: false,
+    ///         expiration: Time::from(10),
+    ///         method: callback,
+    ///         predicate: enforce_callback
+    ///     };
+    ///
+    ///     let cb_methods = vec![cb.clone()];
+    ///
+    ///     let int = Interaction {
+    ///         meth: (method, predicate),
+    ///         callbacks: [cb.clone()],
+    ///     };
+    ///
+    ///     let ex: PubScan = PubScanArgs {
+    ///         memb_pub: [(); 1],
+    ///         is_memb_data_const: true,
+    ///         nmemb_pub: [(); 1],
+    ///         is_nmemb_data_const: true,
+    ///         cur_time: Fr::from(0),
+    ///         bulletin: DummyStore,
+    ///         cb_methods: cb_methods.clone(),
+    ///     };
+    ///
+    ///     let mut rng = thread_rng();
+    ///
+    ///     let (pk, vk) = int.generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), None, false);
+    ///
+    ///     let (pks, vks) = get_scan_interaction::<_, _, _, _, _, _, Poseidon<2>, 1>().generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), Some(ex), true);
+    ///
+    ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
+    ///
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false, false).unwrap();
+    ///
+    ///     let (ps, scan_meth) = u.scan_callbacks::<Poseidon<2>, Fr, FpVar<Fr>, NoSigOTP<Fr>, DummyStore, Groth, DummyStore, 1>(&mut rng, &DummyStore, true, &pks, &DummyStore, (true, true), Time::from(25), cb_methods.clone(), false).unwrap();
+    ///
+    ///     <DummyStore as UserBul<Fr, Data>>::verify_interact_and_append::<PubScan, Groth, 0>(&mut DummyStore, scan_meth.new_object.clone(), scan_meth.old_nullifier.clone(), ps.clone(), scan_meth.cb_com_list.clone(), scan_meth.proof.clone(), None, &vks).unwrap();
+    /// }
+    /// ```
     pub fn scan_callbacks<
         H: FieldHash<F>,
-        CBArgs: Clone + std::fmt::Debug,
+        CBArgs: Clone + std::fmt::Debug + PartialEq + Eq,
         CBArgsVar: AllocVar<CBArgs, F> + Clone,
-        Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar>,
+        Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar> + PartialEq + Eq,
         CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
         Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
@@ -756,30 +1184,162 @@ where
     >(
         &mut self,
         rng: &mut (impl CryptoRng + RngCore),
-        bul_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        bul: &Bul,
         is_memb_data_const: bool,
         pk: &Snark::ProvingKey,
-        pub_args: PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
-        priv_args: PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>,
+        cbul: &CBul,
+        is_memb_nmemb_const: (bool, bool),
+        cur_time: Time<F>,
+        cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
         print_constraints: bool,
-    ) -> Result<ExecutedMethod<F, Snark, CBArgs, Crypto, 0>, SynthesisError>
+    ) -> Result<
+        (
+            PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+            ExecutedMethod<F, Snark, CBArgs, Crypto, 0>,
+        ),
+        SynthesisError,
+    >
     where
         U::UserDataVar: CondSelectGadget<F> + EqGadget<F>,
     {
-        self.interact::<H, PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>, PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>, CBArgs, CBArgsVar, Crypto, Snark, Bul, 0>(
+        let start_ind = match self.scan_index {
+            Some(ind) => {
+                assert!(NUMSCANS + ind <= self.callbacks.len());
+                ind
+            }
+            None => {
+                assert!(NUMSCANS <= self.callbacks.len());
+                0
+            }
+        };
+
+        let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
+
+        let mut vec_cbs = vec![];
+        let mut vec_memb_pub = vec![];
+        let mut vec_nmemb_pub = vec![];
+        let mut vec_memb_priv = vec![];
+        let mut vec_nmemb_priv = vec![];
+        let mut vec_enc = vec![];
+        let mut vec_times = vec![];
+
+        for i in 0..NUMSCANS {
+            let cb: CallbackCom<F, CBArgs, Crypto> = self.get_cb::<CBArgs, Crypto>(start_ind + i);
+            let data = cbul.get_membership_data(cb.get_ticket());
+            let if_in = cbul.verify_in(cb.get_ticket());
+            let (enc, time) = match if_in {
+                Some((e, t)) => (e, t),
+                None => (Crypto::Ct::default(), Time::default()),
+            };
+            vec_enc.push(enc);
+            vec_times.push(time);
+            vec_cbs.push(cb);
+            vec_memb_pub.push(data.0);
+            vec_memb_priv.push(data.1);
+            vec_nmemb_pub.push(data.2);
+            vec_nmemb_priv.push(data.3);
+        }
+
+        let ps: PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS> = PubScanArgs {
+            memb_pub: vec_memb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_pub: vec_nmemb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            bulletin: cbul.clone(),
+            is_memb_data_const: is_memb_nmemb_const.0,
+            is_nmemb_data_const: is_memb_nmemb_const.1,
+            cur_time,
+            cb_methods,
+        };
+
+        let prs: PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS> = PrivScanArgs {
+            priv_n_tickets: vec_cbs.try_into().unwrap(),
+            post_times: vec_times.try_into().unwrap(),
+            enc_args: vec_enc
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            memb_priv: vec_memb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_priv: vec_nmemb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+        };
+
+        let out = self.interact::<H, PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>, PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>, CBArgs, CBArgsVar, Crypto, Snark, Bul, 0>(
             rng,
             get_scan_interaction::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>(),
             [],
             bul_data,
             is_memb_data_const,
             pk,
-            pub_args,
-            priv_args,
+            ps.clone(),
+            prs,
             true,
             print_constraints,
-        )
+        )?;
+
+        Ok((ps, out))
     }
 
+    /// Prove a generic statement about the user with respect to a public user commitment.
+    ///
+    /// This function allows one to prove something about a user object with a public commitment.
+    /// Note that this *does not preserve anonymity* if the proof + result is given to a service,
+    /// as the user commitment is revealed (not the user, so privacy is not an issue).
+    ///
+    ///# Example
+    /// ```rust
+    /// # use zk_callbacks::zk_object;
+    /// # use zk_callbacks::generic::user::User;
+    /// # use rand::thread_rng;
+    /// # use ark_bn254::{Bn254 as E, Fr};
+    /// # use ark_r1cs_std::eq::EqGadget;
+    /// # use ark_r1cs_std::cmp::CmpGadget;
+    /// # use zk_callbacks::generic::interaction::Interaction;
+    /// # use zk_callbacks::generic::interaction::Callback;
+    /// # use zk_callbacks::generic::object::Id;
+    /// # use zk_callbacks::generic::object::Time;
+    /// # use zk_callbacks::generic::object::TimeVar;
+    /// # use ark_relations::r1cs::SynthesisError;
+    /// # use zk_callbacks::generic::user::UserVar;
+    /// # use ark_r1cs_std::fields::fp::FpVar;
+    /// # use ark_groth16::Groth16;
+    /// # use ark_r1cs_std::prelude::Boolean;
+    /// # use zk_callbacks::impls::hash::Poseidon;
+    /// # use ark_r1cs_std::prelude::UInt8;
+    /// # use zk_callbacks::impls::dummy::DummyStore;
+    /// # use ark_r1cs_std::select::CondSelectGadget;
+    /// # use zk_callbacks::generic::interaction::generate_keys_for_statement;
+    /// # use zk_callbacks::impls::centralized::crypto::{NoSigOTP};
+    /// # type Groth = Groth16<E>;
+    /// #[zk_object(Fr)]
+    /// #[derive(Default)]
+    /// struct Data {
+    ///     pub num_visits: Fr,
+    ///     pub bad_rep: u8,
+    ///     pub last_interacted_time: Time<Fr>,
+    /// }
+    ///
+    /// fn predicate<'a, 'b>(user: &'a UserVar<Fr, Data>, _com: &'b FpVar<Fr>, _pub_args: (), _priv_args: ()) -> Result<Boolean<Fr>, SynthesisError> {
+    ///     user.data.num_visits.is_eq(&FpVar::Constant(Fr::from(1)))
+    /// }
+    ///
+    /// fn main () {
+    ///
+    ///     let mut rng = thread_rng();
+    ///
+    ///     let (pk, vk) = generate_keys_for_statement::<Fr, Poseidon<2>, Data, _, _, _, _, Groth>(&mut rng, predicate, None);
+    ///
+    ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(1), last_interacted_time: Time::from(0) }, &mut rng);
+    ///
+    ///     let result = u.prove_statement::<Poseidon<2>, _, _, _, _, Groth>(&mut rng, predicate, &pk, (), (), false).unwrap();
+    ///
+    ///     assert_eq!(result.object, u.commit::<Poseidon<2>>());
+    /// }
+    /// ```
     pub fn prove_statement<
         H: FieldHash<F>,
         PubArgs: Clone,
@@ -825,6 +1385,81 @@ where
         })
     }
 
+    /// Prove a statement about the user object, along with membership in some bulletin.
+    ///
+    /// If a method update is not necessary, one can prove a statement about their user without
+    /// updating it. This function also does not reveal the user commitment; the membership in the
+    /// bulletin is proven without revealing anything more.
+    ///
+    /// # Arguments
+    ///- `&self`: The user on which a statement is being made.
+    ///- `rng`: Random number generator. Used for generating the proof.
+    ///- `predicate`: A predicate `p(U, Com(U), args)` one wants to prove.
+    ///- `pk`: The SNARK proving key, generated by calling
+    ///[`generate_keys_for_statement_in`](`super::interaction::generate_keys_for_statement_in`).
+    ///Note that if membership data is constant, the keys *must* be generated that way as well.
+    ///- `is_memb_data_const`: Is the public membership data constant. Determines whether to load
+    ///the data as a constant or not.
+    ///- `pub_args`: The public arguments to the predicate.
+    ///- `priv_args`: The private arguments to the predicate.
+    ///- `print_constraints`: Whether to print the number of constraints or not.
+    ///
+    ///# Example
+    /// ```rust
+    /// # use zk_callbacks::zk_object;
+    /// # use zk_callbacks::generic::user::User;
+    /// # use rand::thread_rng;
+    /// # use ark_bn254::{Bn254 as E, Fr};
+    /// # use ark_r1cs_std::eq::EqGadget;
+    /// # use ark_r1cs_std::cmp::CmpGadget;
+    /// # use zk_callbacks::generic::interaction::Interaction;
+    /// # use zk_callbacks::generic::interaction::Callback;
+    /// # use zk_callbacks::generic::object::Id;
+    /// # use zk_callbacks::generic::object::Time;
+    /// # use zk_callbacks::generic::object::TimeVar;
+    /// # use ark_relations::r1cs::SynthesisError;
+    /// # use zk_callbacks::generic::user::UserVar;
+    /// # use ark_r1cs_std::fields::fp::FpVar;
+    /// # use ark_groth16::Groth16;
+    /// # use ark_r1cs_std::prelude::Boolean;
+    /// # use zk_callbacks::impls::hash::Poseidon;
+    /// # use ark_r1cs_std::prelude::UInt8;
+    /// # use zk_callbacks::impls::dummy::DummyStore;
+    /// # use ark_r1cs_std::select::CondSelectGadget;
+    /// # use zk_callbacks::generic::interaction::generate_keys_for_statement;
+    /// # use zk_callbacks::impls::centralized::crypto::{NoSigOTP};
+    /// # use zk_callbacks::impls::centralized::ds::sigstore::UOVObjStore;
+    /// # use crate::zk_callbacks::generic::bulletin::JoinableBulletin;
+    /// # use zk_callbacks::generic::interaction::generate_keys_for_statement_in;
+    /// # type Groth = Groth16<E>;
+    /// #[zk_object(Fr)]
+    /// #[derive(Default)]
+    /// struct Data {
+    ///     pub num_visits: Fr,
+    ///     pub bad_rep: u8,
+    ///     pub last_interacted_time: Time<Fr>,
+    /// }
+    ///
+    /// fn predicate<'a, 'b>(user: &'a UserVar<Fr, Data>, _com: &'b FpVar<Fr>, _pub_args: (), _priv_args: ()) -> Result<Boolean<Fr>, SynthesisError> {
+    ///     user.data.num_visits.is_eq(&FpVar::Constant(Fr::from(1)))
+    /// }
+    ///
+    /// fn main () {
+    ///
+    ///     let mut rng = thread_rng();
+    ///
+    ///     let mut obj_store = UOVObjStore::new(&mut rng);
+    ///
+    ///     let (pk, vk) = generate_keys_for_statement_in::<Fr, Poseidon<2>, Data, _, _, _, _, Groth, UOVObjStore<Fr>>(&mut rng, predicate, Some(obj_store.get_pubkey()), None);
+    ///
+    ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(1), last_interacted_time: Time::from(0) }, &mut rng);
+    ///
+    ///     <UOVObjStore<Fr> as JoinableBulletin<Fr, Data>>::join_bul(&mut obj_store, u.commit::<Poseidon<2>>(), ()).unwrap();
+    ///
+    ///     let result = u.prove_statement_and_in::<Poseidon<2>, _, _, _, _, Groth, UOVObjStore<Fr>>(&mut rng, predicate, &pk, (obj_store.get_signature_of(&u.commit::<Poseidon<2>>()).unwrap(), obj_store.get_pubkey()), true, (), (), false).unwrap();
+    ///
+    /// }
+    /// ```
     pub fn prove_statement_and_in<
         H: FieldHash<F>,
         PubArgs: Clone,
@@ -875,6 +1510,31 @@ where
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
+    /// Produce a commitment to the user object.
+    ///
+    /// Uses the hash `H` to produce a commitment to the user object. Note that the nonce is
+    /// already stored within the user.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use zk_callbacks::zk_object;
+    /// # use ark_bn254::Fr;
+    /// # use rand::thread_rng;
+    /// # use zk_callbacks::impls::hash::Poseidon;
+    /// # use zk_callbacks::generic::user::User;
+    /// #[zk_object(Fr)]
+    /// #[derive(Default)]
+    /// struct Data {
+    ///     stuff: Fr,
+    /// }
+    ///
+    /// fn main () {
+    ///     let mut rng = thread_rng();
+    ///     let u = User::create(Data { stuff: Fr::from(3) }, &mut rng);
+    ///     let com = u.commit::<Poseidon<2>>();
+    /// }
+    /// ```
     pub fn commit<H: FieldHash<F>>(&self) -> Com<F> {
         let ser_data = self.data.serialize_elements();
         let ser_fields = self.zk_fields.serialize();
@@ -882,6 +1542,7 @@ impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
         H::hash(&full_dat)
     }
 
+    /// Produce a commitment of `user_var` in-circuit.
     pub fn commit_in_zk<H: FieldHash<F>>(
         user_var: UserVar<F, U>,
     ) -> Result<ComVar<F>, SynthesisError> {

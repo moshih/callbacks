@@ -9,7 +9,7 @@ use crate::{
     crypto::hash::HasherZK,
     impls::{
         centralized::{
-            crypto::{PlainTikCrypto, PlainTikCryptoVar},
+            crypto::{FakeSigPubkey, FakeSigPubkeyVar},
             ds::sig::Signature,
         },
         hash::Poseidon,
@@ -24,17 +24,25 @@ use rand::{distributions::Standard, prelude::Distribution, thread_rng};
 
 use crate::impls::centralized::ds::sigstore::NonmembStore;
 
+/// A signed range and time.
 #[derive(Clone, Default, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct SignedRange<F: PrimeField, S: Signature<F>> {
+    /// A range [a, b).
     pub range: (F, F),
+    /// The epoch or time.
     pub epoch: F,
+    /// The signature on the epoch and range.
     pub sig: S::Sig,
 }
 
+/// The signed range and time in-circuit.
 #[derive(Clone)]
 pub struct SignedRangeVar<F: PrimeField, S: Signature<F>> {
+    /// A range in-circuit.
     pub range: (FpVar<F>, FpVar<F>),
+    /// The epoch in-circuit.
     pub epoch: FpVar<F>,
+    /// The signature variable.
     pub sig: S::SigVar,
 }
 
@@ -121,6 +129,14 @@ where
     }
 }
 
+/// This is a nonmembership store which uses signed ranges.
+///
+/// To prove nonmembership, tickets are ordered from `0` to `((p - 1) / 2) - 1`.
+/// A nonmembership witness consists of a range [a, b) such that the ticket t lies within this
+/// range.
+///
+/// On an epoch update, the new ranges are created and are resigned (along with the epoch).
+/// Therefore, all signed ranges also contain an epoch.
 #[derive(Clone, Default, Debug)]
 pub struct SigRangeStore<F: PrimeField + Absorb, S: Signature<F>>
 where
@@ -128,9 +144,12 @@ where
 {
     privkey: S::Privkey,
 
+    /// The public key for verifying signed ranges.
     pub pubkey: S::Pubkey,
+    /// The list of nonmembership ranges.
     pub ncalled_cbs: Vec<SignedRange<F, S>>,
 
+    /// The current epoch on this range store.
     pub epoch: F,
 }
 
@@ -138,6 +157,7 @@ impl<F: PrimeField + Absorb, S: Signature<F>> SigRangeStore<F, S>
 where
     Standard: Distribution<F>,
 {
+    /// Given an already existing database, initialize the store from this database (and epoch).
     pub fn from(privkey: S::Privkey, db: Vec<SignedRange<F, S>>, epoch: F) -> Self {
         let pubkey = S::get_pubkey(&privkey);
         Self {
@@ -148,14 +168,17 @@ where
         }
     }
 
+    /// Get the signature public verification key for nonmembership.
     pub fn get_pubkey(&self) -> S::Pubkey {
         self.pubkey.clone()
     }
 
+    /// Get the database of signed ranges.
     pub fn get_db(&self) -> Vec<SignedRange<F, S>> {
         self.ncalled_cbs.clone()
     }
 
+    /// Rotate the key. Resigns all ranges with a new key.
     pub fn rotate_key(&mut self, new_key: S::Privkey) -> Result<(), ()> {
         self.pubkey = S::get_pubkey(&new_key);
         self.privkey = new_key;
@@ -192,6 +215,7 @@ where
 impl<F: PrimeField + Absorb, S: Signature<F>> NonmembStore<F> for SigRangeStore<F, S>
 where
     Standard: Distribution<F>,
+    S: Default,
 {
     type NonMembershipWitness = SignedRange<F, S>;
 
@@ -233,14 +257,14 @@ where
     fn update_epoch(
         &mut self,
         rng: &mut (impl rand::CryptoRng + rand::RngCore),
-        current_store: Vec<PlainTikCrypto<F>>,
+        current_store: Vec<FakeSigPubkey<F>>,
     ) {
         self.epoch += F::ONE;
 
         let mut v = vec![];
 
         for i in &current_store {
-            v.push(i.0);
+            v.push(i.to());
         }
 
         v.sort();
@@ -304,18 +328,21 @@ where
         self.ncalled_cbs = sv;
     }
 
-    fn get_nmemb_witness(&self, tik: &PlainTikCrypto<F>) -> Option<Self::NonMembershipWitness> {
+    fn get_nmemb(
+        &self,
+        tik: &FakeSigPubkey<F>,
+    ) -> Option<(Self::NonMembershipPub, Self::NonMembershipWitness)> {
         for sr in &self.ncalled_cbs {
-            if sr.range.0 <= tik.0 && tik.0 < sr.range.1 {
-                return Some(sr.clone());
+            if sr.range.0 <= tik.to() && tik.to() < sr.range.1 {
+                return Some((self.get_pubkey(), sr.clone()));
             }
         }
         None
     }
 
-    fn verify_not_in(&self, tik: PlainTikCrypto<F>) -> bool {
+    fn verify_not_in(&self, tik: FakeSigPubkey<F>) -> bool {
         for sr in &self.ncalled_cbs {
-            if sr.range.0 <= tik.0 && tik.0 < sr.range.1 {
+            if sr.range.0 <= tik.to() && tik.to() < sr.range.1 {
                 return true;
             }
         }
@@ -323,7 +350,7 @@ where
     }
 
     fn enforce_nonmembership_of(
-        tikvar: PlainTikCryptoVar<F>,
+        tikvar: FakeSigPubkeyVar<F>,
         extra_witness: Self::NonMembershipWitnessVar,
         extra_pub: Self::NonMembershipPubVar,
     ) -> Result<ark_r1cs_std::prelude::Boolean<F>, SynthesisError> {

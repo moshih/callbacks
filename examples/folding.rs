@@ -5,7 +5,6 @@ use ark_groth16::Groth16;
 use ark_grumpkin::{constraints::GVar as GVar2, Projective as Projective2};
 use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
 use ark_relations::r1cs::Result as ArkResult;
-use ark_serialize::CanonicalDeserialize;
 use folding_schemes::{
     commitment::{kzg::KZG, pedersen::Pedersen},
     folding::nova::{Nova, PreprocessorParam},
@@ -13,12 +12,10 @@ use folding_schemes::{
     transcript::poseidon::poseidon_canonical_config,
     FoldingScheme,
 };
-use zk_callbacks::impls::centralized::ds::sigstore::NonmembStore;
 use rand::thread_rng;
 use zk_callbacks::{
     generic::{
         bulletin::{JoinableBulletin, PublicCallbackBul, UserBul},
-        callbacks::CallbackCom,
         fold::{FoldSer, FoldableUserData, FoldingScan},
         interaction::{Callback, Interaction},
         object::{Id, Time},
@@ -30,8 +27,8 @@ use zk_callbacks::{
     },
     impls::{
         centralized::{
-            crypto::PlainTikCrypto,
-            ds::sigstore::{UOVCallbackStore, UOVObjStore, UOVStore},
+            crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP},
+            ds::sigstore::{NonmembStore, UOVCallbackStore, UOVObjStore, UOVStore},
         },
         hash::Poseidon,
     },
@@ -87,13 +84,12 @@ type U = User<F, TestFolding>;
 type UV = UserVar<F, TestFolding>;
 type CB = Callback<F, TestFolding, CBArg, CBArgVar>;
 type Int1 = Interaction<F, TestFolding, (), (), (), (), CBArg, CBArgVar, 1>;
-type PubScan =
-    PubScanArgs<F, TestFolding, F, FpVar<F>, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
+type PubScan = PubScanArgs<F, TestFolding, F, FpVar<F>, NoSigOTP<F>, UOVCallbackStore<F>, NUMSCANS>;
 type PubScanVar =
-    PubScanArgsVar<F, TestFolding, F, FpVar<F>, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
+    PubScanArgsVar<F, TestFolding, F, FpVar<F>, NoSigOTP<F>, UOVCallbackStore<F>, NUMSCANS>;
 
-type PrivScan = PrivScanArgs<F, F, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
-type PrivScanVar = PrivScanArgsVar<F, F, PlainTikCrypto<F>, UOVCallbackStore<F>, NUMSCANS>;
+type PrivScan = PrivScanArgs<F, F, NoSigOTP<F>, UOVCallbackStore<F>, NUMSCANS>;
+type PrivScanVar = PrivScanArgsVar<F, F, NoSigOTP<F>, UOVCallbackStore<F>, NUMSCANS>;
 
 type IntScan =
     Interaction<F, TestFolding, PubScan, PubScanVar, PrivScan, PrivScanVar, CBArg, CBArgVar, 0>;
@@ -168,7 +164,7 @@ fn main() {
                 TestFolding,
                 F,
                 FpVar<F>,
-                PlainTikCrypto<F>,
+                NoSigOTP<F>,
                 UOVCallbackStore<F>,
                 Poseidon<2>,
                 NUMSCANS,
@@ -178,7 +174,7 @@ fn main() {
                 TestFolding,
                 F,
                 FpVar<F>,
-                PlainTikCrypto<F>,
+                NoSigOTP<F>,
                 UOVCallbackStore<F>,
                 Poseidon<2>,
                 NUMSCANS,
@@ -188,7 +184,7 @@ fn main() {
     };
 
     let ex = PubScanArgs {
-        memb_pub: [store.obj_bul.get_pubkey(); NUMSCANS],
+        memb_pub: [store.callback_bul.get_pubkey(); NUMSCANS],
         is_memb_data_const: true,
         nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey(); NUMSCANS],
         is_nmemb_data_const: true,
@@ -198,19 +194,18 @@ fn main() {
     };
 
     // generate keys for the method described initially
-    let (pk, vk) =
-        interaction // see interaction
-            .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, UOVObjStore<F>>(
-                &mut rng,
-                Some(store.obj_bul.get_pubkey()),
-                None,
-                false,
-            );
+    let (pk, vk) = interaction // see interaction
+        .generate_keys::<Poseidon<2>, Groth16<E>, NoSigOTP<F>, UOVObjStore<F>>(
+            &mut rng,
+            Some(store.obj_bul.get_pubkey()),
+            None,
+            false,
+        );
 
     // generate keys for the callback scan
     let (_pks, _vks) =
         cb_interaction // see cb_interaction
-            .generate_keys::<Poseidon<2>, Groth16<E>, PlainTikCrypto<F>, UOVObjStore<F>>(
+            .generate_keys::<Poseidon<2>, Groth16<E>, NoSigOTP<F>, UOVObjStore<F>>(
                 &mut rng,
                 Some(store.obj_bul.get_pubkey()),
                 Some(ex),
@@ -232,41 +227,38 @@ fn main() {
     );
 
     let exec_method = u
-        .interact::<Poseidon<2>, (), (), (), (), F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, UOVObjStore<F>, 1>(
+        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, NoSigOTP<F>, Groth16<E>, UOVObjStore<F>, 1>(
             &mut rng,
             interaction.clone(), // see interaction
-            [PlainTikCrypto(F::from(0))],
-            (
-               store.obj_bul 
-                    .get_signature_of(&u.commit::<Poseidon<2>>())
-                    .unwrap(),
-                store.obj_bul.get_pubkey(),
-            ),
+            [FakeSigPubkey::pk()],
+            &store.obj_bul,
             true,
             &pk,
             (),
             (),
-            false,
             true
         )
         .unwrap();
 
-    let _out =
-        <UOVObjStore<F> as UserBul<F, TestFolding>>::verify_interact_and_append::<(), Groth16<E>, 1>(
-            &mut store.obj_bul,
-            exec_method.new_object.clone(),
-            exec_method.old_nullifier.clone(),
-            (),
-            exec_method.cb_com_list.clone(),
-            exec_method.proof.clone(),
-            None,
-            &vk,
-        );
+    let _out = <UOVObjStore<F> as UserBul<F, TestFolding>>::verify_interact_and_append::<
+        (),
+        Groth16<E>,
+        1,
+    >(
+        &mut store.obj_bul,
+        exec_method.new_object.clone(),
+        exec_method.old_nullifier.clone(),
+        (),
+        exec_method.cb_com_list.clone(),
+        exec_method.proof.clone(),
+        None,
+        &vk,
+    );
     // Server checks proof on interaction with the verification key, approves it, and stores the new object into the store
 
     let _ = store.approve_interaction_and_store::<TestFolding, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
         exec_method,                // output of interaction
-        PlainTikCrypto(F::from(0)), // for authenticity: verify rerandomization of key produces
+        FakeSigPrivkey::sk(), // for authenticity: verify rerandomization of key produces
         // proper tickets (here it doesn't matter)
         (),
         &store.obj_bul.clone(),
@@ -277,26 +269,24 @@ fn main() {
     );
 
     let exec_method2 = u
-        .interact::<Poseidon<2>, (), (), (), (), F, FpVar<F>, PlainTikCrypto<F>, Groth16<E>, UOVObjStore<F>, 1>(
+        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, NoSigOTP<F>, Groth16<E>, UOVObjStore<F>, 1>(
             &mut rng,
             interaction.clone(),
-            [PlainTikCrypto(F::from(0))],
-            (
-               store.obj_bul 
-                    .get_signature_of(&u.commit::<Poseidon<2>>())
-                    .unwrap(),
-                store.obj_bul.get_pubkey(),
-            ),
+            [FakeSigPubkey::pk()],
+            &store.obj_bul,
             true,
             &pk,
             (),
             (),
-            false,
             true,
         )
         .unwrap();
 
-    let _ = <UOVObjStore<F> as UserBul<F, TestFolding>>::verify_interact_and_append::<(), Groth16<E>, 1>(
+    let _ = <UOVObjStore<F> as UserBul<F, TestFolding>>::verify_interact_and_append::<
+        (),
+        Groth16<E>,
+        1,
+    >(
         &mut store.obj_bul,
         exec_method2.new_object.clone(),
         exec_method2.old_nullifier.clone(),
@@ -310,7 +300,7 @@ fn main() {
     // The server approves the interaction and stores it again
     let _ = store.approve_interaction_and_store::<TestFolding, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
         exec_method2,
-        PlainTikCrypto(F::from(0)),
+        FakeSigPrivkey::sk(),
         (),
         &store.obj_bul.clone(),
         store.obj_bul.get_pubkey(),
@@ -324,7 +314,7 @@ fn main() {
         GVar,
         Projective2,
         GVar2,
-        FoldingScan<F, TestFolding, CBArg, CBArgVar, PlainTikCrypto<F>, UOVCallbackStore<F>, Poseidon<2>>,
+        FoldingScan<F, TestFolding, CBArg, CBArgVar, NoSigOTP<F>, UOVCallbackStore<F>, Poseidon<2>>,
         KZG<'static, E>,
         Pedersen<Projective2>,
         false,
@@ -334,11 +324,11 @@ fn main() {
     let ps = PubScanArgs {
         // Create the public scanning arguments
         memb_pub: [store.callback_bul.get_pubkey()], // Public membership data (pubkey)
-        is_memb_data_const: true,               // it is constant
+        is_memb_data_const: true,                    // it is constant
         nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey()], // Public nonmemb data (pubkey for range sigs)
         is_nmemb_data_const: true,
         cur_time: store.callback_bul.nmemb_bul.get_epoch(), // *current* time as of this proof generation
-        bulletin: store.callback_bul.clone(), // bulletin handle
+        bulletin: store.callback_bul.clone(),               // bulletin handle
         cb_methods: cb_methods.clone(), // Vec of callbacks (used to check which method to call)
     };
 
@@ -347,7 +337,7 @@ fn main() {
         TestFolding,
         CBArg,
         CBArgVar,
-        PlainTikCrypto<F>,
+        NoSigOTP<F>,
         UOVCallbackStore<F>,
         Poseidon<2>,
     > = FoldingScan::new(ps.clone()).unwrap();
@@ -358,35 +348,28 @@ fn main() {
 
     let init_state = vec![u.commit::<Poseidon<2>>()];
 
-    let cb = CallbackCom::deserialize_compressed(&*u.callbacks[0]).unwrap();
-    let tik: PlainTikCrypto<F> = cb.clone().cb_entry.tik;
+    let cb = u.get_cb(0);
+    let tik: FakeSigPubkey<F> = cb.get_ticket();
 
-    let prs1: PrivScanArgs<F, CBArg, PlainTikCrypto<F>, UOVCallbackStore<F>, 1> = PrivScanArgs {
+    let prs1: PrivScanArgs<F, CBArg, NoSigOTP<F>, UOVCallbackStore<F>, 1> = PrivScanArgs {
         priv_n_tickets: [cb],
-        post_times: [store.callback_bul
+        post_times: [store
+            .callback_bul
             .verify_in(tik.clone())
             .map_or(F::from(0), |(_, p2)| p2)],
-        enc_args: [store.callback_bul
+        enc_args: [store
+            .callback_bul
             .verify_in(tik.clone())
             .map_or(F::from(0), |(p1, _)| p1)],
-        memb_priv: [store.callback_bul.get_memb_witness(&tik).unwrap_or_default()],
-        nmemb_priv: [store.callback_bul.nmemb_bul.get_nmemb_witness(&tik).unwrap_or_default()],
+        memb_priv: [store
+            .callback_bul
+            .get_memb_witness(&tik)
+            .unwrap_or_default()],
+        nmemb_priv: [store
+            .callback_bul
+            .get_nmemb_witness(&tik)
+            .unwrap_or_default()],
     };
-
-    // let _cb = CallbackCom::deserialize_compressed(&*u.callbacks[1]).unwrap();
-    // let _tik: PlainTikCrypto<F> = cb.clone().cb_entry.tik;
-
-    // let _prs2: PrivScanArgs<F, CBArg, PlainTikCrypto<F>, SigStore<F>, 1> = PrivScanArgs {
-    //     priv_n_tickets: [cb],
-    //     post_times: [co_store
-    //         .verify_in(tik.clone())
-    //         .map_or(F::from(0), |(_, p2)| p2)],
-    //     enc_args: [co_store
-    //         .verify_in(tik.clone())
-    //         .map_or(F::from(0), |(p1, _)| p1)],
-    //     memb_priv: [co_store.get_cb_signature_of(&tik).unwrap_or_default()],
-    //     nmemb_priv: [co_store.get_cb_sig_range_of(&tik).unwrap_or_default()],
-    // };
 
     let mut folding_scheme = NF::init(&nova_params, f_circ, init_state.clone()).unwrap();
 

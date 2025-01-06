@@ -90,10 +90,6 @@ use rand::{CryptoRng, RngCore};
 ///         self.0 ^ ciphertext
 ///     }
 ///
-///     fn encrypt_in_zk(key: OTPVar<F>, message: UInt8<F>) -> Result<UInt8<F>, SynthesisError> {
-///         Ok(key.0 ^ message)
-///     }
-///
 ///     fn decrypt_in_zk(key: OTPVar<F>, ciphertext: UInt8<F>) -> Result<UInt8<F>, SynthesisError>
 ///     {
 ///         Ok(key.0 ^ ciphertext)
@@ -124,9 +120,6 @@ pub trait CPACipher<F: PrimeField> {
 
     /// Decrypt a ciphertext with the key, and output a plaintext message.
     fn decrypt(&self, ciphertext: Self::C) -> Self::M;
-
-    /// Encrypt a message representation in zero knowledge, using a key in circuit.
-    fn encrypt_in_zk(key: Self::KeyVar, message: Self::MV) -> Result<Self::CV, SynthesisError>;
 
     /// Decrypt a ciphertext representation in zero knowledge, using a key in circuit.
     fn decrypt_in_zk(key: Self::KeyVar, ciphertext: Self::CV) -> Result<Self::MV, SynthesisError>;

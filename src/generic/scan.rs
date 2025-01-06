@@ -24,6 +24,82 @@ use crate::generic::{
 
 use crate::generic::interaction::Interaction;
 
+/// Public arguments to the scan method.
+///
+/// These arguments are passed into the scan method. This includes public membership data for the
+/// callback tickets (for example, signature public keys or a Merkle root), along with the current time
+/// and the list of callbacks.
+///
+/// # Example
+/// ```rust
+/// # use ark_bn254::{Bn254 as E, Fr};
+/// # use ark_groth16::Groth16;
+/// # use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+/// # use ark_relations::r1cs::{Result as ArkResult, ToConstraintField};
+/// # use ark_snark::SNARK;
+/// # use rand::thread_rng;
+/// # use std::time::SystemTime;
+/// # use zk_callbacks::{
+/// #     generic::{
+/// #         bulletin::{CallbackBul, JoinableBulletin, UserBul},
+/// #         interaction::{generate_keys_for_statement_in, Callback, Interaction},
+/// #         object::{Id, Time},
+/// #         scan::{get_scan_interaction, PubScanArgs},
+/// #         service::ServiceProvider,
+/// #         user::{User, UserVar},
+/// #     },
+/// #     impls::{
+/// #         centralized::{
+/// #             crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP},
+/// #             ds::sigstore::{UOVCallbackStore, UOVObjStore, UOVStore},
+/// #         },
+/// #         hash::Poseidon,
+/// #     },
+/// #     scannable_zk_object,
+/// # };
+/// #[scannable_zk_object(Fr)]
+/// #[derive(Default)]
+/// pub struct Data {
+///     pub token: Fr,
+/// }
+///
+/// fn cb_method<'a>(old_user: &'a User<Fr, Data>, args: Fr) -> User<Fr, Data> {
+///     let mut out = old_user.clone();
+///     out.data.token = args;
+///     out
+/// }
+///
+/// fn cb_enforce<'a>(old_user: &'a UserVar<Fr, Data>, args: FpVar<Fr>) -> ArkResult<UserVar<Fr, Data>> {
+///     let mut out = old_user.clone();
+///     out.data.token = args;
+///     Ok(out)
+/// }
+///
+/// fn main() {
+///     let mut rng = thread_rng();
+///     let cb = Callback {
+///         method_id: Id::from(0),
+///         expirable: false,
+///         expiration: Time::from(300),
+///         method: cb_method,
+///         predicate: cb_enforce,
+///     };
+///
+///     let mut store = UOVStore::new(&mut rng);
+///
+///     let cb_methods = vec![cb.clone()];
+///
+///     let pub_scan_args = PubScanArgs {
+///         memb_pub: [store.callback_bul.get_pubkey(); 1],
+///         is_memb_data_const: true,
+///         nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey(); 1],
+///         is_nmemb_data_const: true,
+///         cur_time: Fr::from(0),
+///         bulletin: store.callback_bul.clone(),
+///         cb_methods: cb_methods.clone(),
+///     };
+/// }
+/// ```
 #[derive(Clone)]
 pub struct PubScanArgs<
     F: PrimeField + Absorb,
@@ -34,13 +110,20 @@ pub struct PubScanArgs<
     CBul: PublicCallbackBul<F, CBArgs, Crypto>,
     const NUMCBS: usize,
 > {
+    /// Public membership data for each callback ticket.
     pub memb_pub: [CBul::MembershipPub; NUMCBS],
+    /// If the public membership data is constant.
     pub is_memb_data_const: bool,
+    /// Public *non*membership data for each callback ticket.
     pub nmemb_pub: [CBul::NonMembershipPub; NUMCBS],
+    /// If the nonmemmbership data is constant.
     pub is_nmemb_data_const: bool,
+    /// The current time.
     pub cur_time: Time<F>,
 
+    /// The callback bulletin.
     pub bulletin: CBul,
+    /// List of callbacks (used to call the function if the callback ticket was posted).
     pub cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
 }
 
@@ -116,6 +199,9 @@ where
     }
 }
 
+/// In-circuit representation of the public scan arguments.
+///
+/// For more details, see [`PubScanArgs`].
 #[derive(Clone)]
 pub struct PubScanArgsVar<
     F: PrimeField + Absorb,
@@ -126,10 +212,15 @@ pub struct PubScanArgsVar<
     CBul: PublicCallbackBul<F, CBArgs, Crypto>,
     const NUMCBS: usize,
 > {
+    /// Public callback ticket membership data in-circuit.
     pub memb_pub: [CBul::MembershipPubVar; NUMCBS],
+    /// Public callback ticket nonmembership data in-circuit.
     pub nmemb_pub: [CBul::NonMembershipPubVar; NUMCBS],
+    /// Current time in-circuit.
     pub cur_time: TimeVar<F>,
 
+    /// Callback methods. Note that these are not in circuit, as they are called to *construct*
+    /// the circuit.
     pub cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
 }
 
@@ -208,6 +299,142 @@ impl<
     }
 }
 
+/// Private arguments to the scan method.
+///
+/// These arguments are passed into the scan method. To prove a proper scan (without revealing the
+/// tickets given), one must pass in the tickets as private arguments into the proof.
+///
+/// # Example
+/// ```rust
+/// # use zk_callbacks::zk_object;
+/// # use zk_callbacks::generic::user::User;
+/// # use rand::thread_rng;
+/// # use ark_bn254::{Bn254 as E, Fr};
+/// # use ark_r1cs_std::eq::EqGadget;
+/// # use ark_r1cs_std::cmp::CmpGadget;
+/// # use zk_callbacks::generic::interaction::Interaction;
+/// # use zk_callbacks::generic::interaction::Callback;
+/// # use zk_callbacks::generic::object::Id;
+/// # use zk_callbacks::generic::object::Time;
+/// # use zk_callbacks::generic::object::TimeVar;
+/// # use ark_relations::r1cs::SynthesisError;
+/// # use zk_callbacks::generic::user::UserVar;
+/// # use ark_r1cs_std::fields::fp::FpVar;
+/// # use ark_groth16::Groth16;
+/// # use ark_r1cs_std::prelude::Boolean;
+/// # use zk_callbacks::generic::bulletin::UserBul;
+/// # use zk_callbacks::impls::hash::Poseidon;
+/// # use ark_r1cs_std::prelude::UInt8;
+/// # use zk_callbacks::impls::dummy::DummyStore;
+/// # use zk_callbacks::generic::scan::get_scan_interaction;
+/// # use zk_callbacks::generic::scan::PubScanArgs;
+/// # use ark_r1cs_std::select::CondSelectGadget;
+/// # use zk_callbacks::impls::centralized::crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP};
+/// # use zk_callbacks::scannable_zk_object;
+/// # use zk_callbacks::generic::scan::PrivScanArgs;
+/// # use crate::zk_callbacks::impls::centralized::ds::sigstore::NonmembStore;
+/// # use crate::zk_callbacks::generic::bulletin::PublicCallbackBul;
+/// # use zk_callbacks::impls::centralized::ds::sigstore::{UOVCallbackStore, UOVStore};
+/// # type Groth = Groth16<E>;
+/// type PubScan = PubScanArgs<Fr, Data, Fr, FpVar<Fr>, NoSigOTP<Fr>, UOVCallbackStore<Fr>, 1>;
+///
+/// #[scannable_zk_object(Fr)]
+/// #[derive(Default)]
+/// struct Data {
+///     pub num_visits: Fr,
+///     pub bad_rep: u8,
+///     pub last_interacted_time: Time<Fr>,
+/// }
+///
+/// fn method<'a>(old_user: &'a User<Fr, Data>, pub_time: Time<Fr>, _priv: ()) -> User<Fr, Data> {
+///     let mut new = old_user.clone();
+///     new.data.num_visits += Fr::from(1);
+///     new.data.last_interacted_time = pub_time;
+///     new
+/// }
+///
+/// fn predicate<'a>(old_user: &'a UserVar<Fr, Data>, new_user: &'a UserVar<Fr, Data>, pub_time: TimeVar<Fr>, _priv: ()) -> Result<Boolean<Fr>, SynthesisError> {
+///     let o1 = old_user.data.bad_rep.is_eq(&new_user.data.bad_rep)?;
+///     let o2 = old_user.data.bad_rep.is_le(&UInt8::constant(40))?;
+///     let o3 = new_user.data.num_visits.is_eq(&(old_user.data.num_visits.clone() + FpVar::Constant(Fr::from(1))))?;
+///     let o4 = new_user.data.last_interacted_time.is_eq(&pub_time)?;
+///     Ok(o1 & o2 & o3 & o4)
+/// }
+///
+/// fn callback<'a>(old_user: &'a User<Fr, Data>, args: Fr) -> User<Fr, Data> {
+///     let mut u2 = old_user.clone();
+///     if args == Fr::from(0) {
+///         u2.data.bad_rep;
+///     } else {
+///         u2.data.bad_rep += 10;
+///     }
+///     u2.clone()
+/// }
+///
+/// fn enforce_callback<'a>(old_user: &'a UserVar<Fr, Data>, args: FpVar<Fr>) -> Result<UserVar<Fr, Data>, SynthesisError> {
+///     let mut u = old_user.clone();
+///     u.data.bad_rep =
+///     UInt8::conditionally_select(
+///         &args.is_eq(&FpVar::Constant(Fr::from(0)))?,
+///         &u.data.bad_rep,
+///         &u.data.bad_rep.wrapping_add(&UInt8::constant(10))
+///     )?;
+///     Ok(u)
+/// }
+///
+///
+/// fn main () {
+///
+///     let mut rng = thread_rng();
+///
+///     let cb = Callback {
+///         method_id: Id::from(0),
+///         expirable: false,
+///         expiration: Time::from(10),
+///         method: callback,
+///         predicate: enforce_callback
+///     };
+///
+///     let cb_methods = vec![cb.clone()];
+///
+///     let mut store = UOVStore::new(&mut rng);
+///
+///     let int = Interaction {
+///         meth: (method, predicate),
+///         callbacks: [cb.clone()],
+///     };
+///
+///     let example_pubscan: PubScan = PubScanArgs {
+///         memb_pub: [store.callback_bul.get_pubkey()],
+///         is_memb_data_const: true,
+///         nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey()],
+///         is_nmemb_data_const: true,
+///         cur_time: store.callback_bul.nmemb_bul.get_epoch(),
+///         bulletin: store.callback_bul.clone(),
+///         cb_methods: cb_methods.clone(),
+///     };
+///
+///     let (pk, vk) = int.generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), None, false);
+///
+///     let (pks, vks) = get_scan_interaction::<_, _, _, _, _, _, Poseidon<2>, 1>().generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), Some(example_pubscan), true);
+///
+///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
+///
+///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false, false).unwrap();
+///
+///     let cb = u.get_cb::<Fr, NoSigOTP<Fr>>(0);
+///     let tik: FakeSigPubkey<Fr> = cb.get_ticket();
+///
+///     let prs: PrivScanArgs<Fr, Fr, NoSigOTP<Fr>, UOVCallbackStore<Fr>, 1> = PrivScanArgs {
+///         priv_n_tickets: [cb],
+///         post_times: [store.callback_bul.verify_in(tik.clone()).map_or(Fr::from(0), |(_, p2)| p2)],
+///         enc_args: [store.callback_bul.verify_in(tik.clone()).map_or(Fr::from(0), |(p1, _)| p1)],
+///         memb_priv: [store.callback_bul.get_memb_witness(&tik).unwrap_or_default()],
+///         nmemb_priv: [store.callback_bul.get_nmemb_witness(&tik).unwrap_or_default()],
+///     };
+///
+/// }
+/// ```
 #[derive(Clone)]
 pub struct PrivScanArgs<
     F: PrimeField + Absorb,
@@ -216,10 +443,19 @@ pub struct PrivScanArgs<
     CBul: PublicCallbackBul<F, CBArgs, Crypto>,
     const NUMCBS: usize,
 > {
+    /// The private callback tickets handed out.
     pub priv_n_tickets: [CallbackCom<F, CBArgs, Crypto>; NUMCBS],
+    /// The encrypted arguments if a callback ticket has been called. If not, this should be
+    /// set to a default value.
     pub enc_args: [Crypto::Ct; NUMCBS],
+    /// The post time of a callback ticket if it has been called (posted). If not, this should
+    /// be set to a default value.
     pub post_times: [Time<F>; NUMCBS],
+    /// Private membership data for callback tickets. If the callback ticket is not a member (has not
+    /// been called), then this should be set to a default value.
     pub memb_priv: [CBul::MembershipWitness; NUMCBS],
+    /// Private nonmembership data for callback tickets. If the callback ticket is a member
+    /// (has been called), then this should be set to a default value.
     pub nmemb_priv: [CBul::NonMembershipWitness; NUMCBS],
 }
 
@@ -260,6 +496,9 @@ impl<
     }
 }
 
+/// In-circuit representation of the private scan arguments.
+///
+/// For more details, see [`PrivScanArgs`].
 #[derive(Clone)]
 pub struct PrivScanArgsVar<
     F: PrimeField + Absorb,
@@ -268,10 +507,15 @@ pub struct PrivScanArgsVar<
     CBul: PublicCallbackBul<F, CBArgs, Crypto>,
     const NUMCBS: usize,
 > {
+    /// Opened callback ticket commitments in-circuit.
     pub priv_n_tickets: [CallbackComVar<F, CBArgs, Crypto>; NUMCBS],
+    /// The encrypted arguments for called callback tickets in-circuit.
     pub enc_args: [<Crypto::EncKey as CPACipher<F>>::CV; NUMCBS],
+    /// The post (call) time for called callback tickets in-circuit.
     pub post_times: [TimeVar<F>; NUMCBS],
+    /// The private membership data for a callback ticket in-circuit.
     pub memb_priv: [CBul::MembershipWitnessVar; NUMCBS],
+    /// The private nonmembership data for a callback ticket in-circuit.
     pub nmemb_priv: [CBul::NonMembershipWitnessVar; NUMCBS],
 }
 
@@ -337,6 +581,12 @@ impl<
     }
 }
 
+/// Applies a scan to a user.
+///
+/// This applies a scan with public arguments (callback bulletin public data, the time of
+/// scan) and private arguments (the callback tickets, encrypted arguments, and post times).
+///
+/// This is structured for use within an interaction.
 pub fn scan_method<
     F: PrimeField + Absorb,
     U: UserData<F>,
@@ -357,6 +607,8 @@ pub fn scan_method<
         out_user.zk_fields.is_ingest_over = false;
         out_user.zk_fields.old_in_progress_callback_hash = F::zero();
         out_user.zk_fields.new_in_progress_callback_hash = F::zero();
+        out_user.scan_index = Some(0);
+        out_user.in_progress_cbs = out_user.callbacks.clone();
     }
 
     for i in priv_args.priv_n_tickets {
@@ -379,9 +631,9 @@ pub fn scan_method<
 
                 let mut cb = Vec::new();
                 i.clone().serialize_compressed(&mut cb).unwrap();
-                for x in 0..out_user.callbacks.len() {
-                    if out_user.callbacks[x] == cb {
-                        out_user.callbacks.remove(x);
+                for x in 0..out_user.in_progress_cbs.len() {
+                    if out_user.in_progress_cbs[x] == cb {
+                        out_user.in_progress_cbs.remove(x);
                     }
                 }
             }
@@ -390,9 +642,9 @@ pub fn scan_method<
                 if i.cb_entry.expirable && pub_args.cur_time > i.cb_entry.expiration {
                     let mut cb = Vec::new();
                     i.clone().serialize_compressed(&mut cb).unwrap();
-                    for x in 0..out_user.callbacks.len() {
-                        if out_user.callbacks[x] == cb {
-                            out_user.callbacks.remove(x);
+                    for x in 0..out_user.in_progress_cbs.len() {
+                        if out_user.in_progress_cbs[x] == cb {
+                            out_user.in_progress_cbs.remove(x);
                         }
                     }
                 } else {
@@ -404,6 +656,8 @@ pub fn scan_method<
                 }
             }
         }
+
+        out_user.scan_index = Some(out_user.scan_index.unwrap() + 1);
     }
 
     if out_user.zk_fields.old_in_progress_callback_hash == out_user.zk_fields.callback_hash {
@@ -411,11 +665,15 @@ pub fn scan_method<
         out_user.zk_fields.new_in_progress_callback_hash = F::ZERO;
         out_user.zk_fields.old_in_progress_callback_hash = out_user.zk_fields.callback_hash;
         out_user.zk_fields.is_ingest_over = true;
+        out_user.callbacks = out_user.in_progress_cbs.clone();
+        out_user.in_progress_cbs = vec![];
+        out_user.scan_index = None;
     }
+
     out_user
 }
 
-pub fn scan_apply_method_zk<
+pub(crate) fn scan_apply_method_zk<
     F: PrimeField + Absorb,
     U: UserData<F>,
     CBArgs: Clone,
@@ -607,6 +865,9 @@ where
     Ok(inprog_user)
 }
 
+/// Enforces that the `user_new` is a scan of `user_old`.
+///
+/// This is the predicate associated with [`scan_method`], for use in an interaction.
 pub fn scan_predicate<
     F: PrimeField + Absorb,
     U: UserData<F>,
@@ -637,6 +898,121 @@ where
     Ok(b)
 }
 
+/// Returns the interaction associated with a scan.
+///
+/// Note that a scan is simply just a method (to scan some number of tickets) and a predicate (to
+/// enforce the correct scan). Therefore, a scan can be encapsulated into an interaction, which
+/// contains 0 new callbacks.
+///
+/// This function returns the interaction associated with [`scan_method`] and [`scan_predicate`].
+///
+/// # Example
+/// ```rust
+/// # use zk_callbacks::zk_object;
+/// # use zk_callbacks::generic::user::User;
+/// # use rand::thread_rng;
+/// # use ark_bn254::{Bn254 as E, Fr};
+/// # use ark_r1cs_std::eq::EqGadget;
+/// # use ark_r1cs_std::cmp::CmpGadget;
+/// # use zk_callbacks::generic::interaction::Interaction;
+/// # use zk_callbacks::generic::interaction::Callback;
+/// # use zk_callbacks::generic::object::Id;
+/// # use zk_callbacks::generic::object::Time;
+/// # use zk_callbacks::generic::object::TimeVar;
+/// # use ark_relations::r1cs::SynthesisError;
+/// # use zk_callbacks::generic::user::UserVar;
+/// # use ark_r1cs_std::fields::fp::FpVar;
+/// # use ark_groth16::Groth16;
+/// # use ark_r1cs_std::prelude::Boolean;
+/// # use zk_callbacks::generic::bulletin::UserBul;
+/// # use zk_callbacks::impls::hash::Poseidon;
+/// # use ark_r1cs_std::prelude::UInt8;
+/// # use zk_callbacks::impls::dummy::DummyStore;
+/// # use zk_callbacks::generic::scan::get_scan_interaction;
+/// # use zk_callbacks::generic::scan::PubScanArgs;
+/// # use ark_r1cs_std::select::CondSelectGadget;
+/// # use zk_callbacks::impls::centralized::crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP};
+/// # use zk_callbacks::scannable_zk_object;
+/// # type Groth = Groth16<E>;
+/// # type PubScan = PubScanArgs<Fr, Data, Fr, FpVar<Fr>, NoSigOTP<Fr>, DummyStore, 1>;
+/// #[scannable_zk_object(Fr)]
+/// #[derive(Default)]
+/// struct Data {
+///     pub num_visits: Fr,
+///     pub bad_rep: u8,
+///     pub last_interacted_time: Time<Fr>,
+/// }
+///
+/// fn method<'a>(old_user: &'a User<Fr, Data>, pub_time: Time<Fr>, _priv: ()) -> User<Fr, Data> {
+///     let mut new = old_user.clone();
+///     new.data.num_visits += Fr::from(1);
+///     new.data.last_interacted_time = pub_time;
+///     new
+/// }
+///
+/// fn predicate<'a>(old_user: &'a UserVar<Fr, Data>, new_user: &'a UserVar<Fr, Data>, pub_time: TimeVar<Fr>, _priv: ()) -> Result<Boolean<Fr>, SynthesisError> {
+///     let o1 = old_user.data.bad_rep.is_eq(&new_user.data.bad_rep)?;
+///     let o2 = old_user.data.bad_rep.is_le(&UInt8::constant(40))?;
+///     let o3 = new_user.data.num_visits.is_eq(&(old_user.data.num_visits.clone() + FpVar::Constant(Fr::from(1))))?;
+///     let o4 = new_user.data.last_interacted_time.is_eq(&pub_time)?;
+///     Ok(o1 & o2 & o3 & o4)
+/// }
+///
+/// fn callback<'a>(old_user: &'a User<Fr, Data>, args: Fr) -> User<Fr, Data> {
+///     let mut u2 = old_user.clone();
+///     if args == Fr::from(0) {
+///         u2.data.bad_rep;
+///     } else {
+///         u2.data.bad_rep += 10;
+///     }
+///     u2.clone()
+/// }
+///
+/// fn enforce_callback<'a>(old_user: &'a UserVar<Fr, Data>, args: FpVar<Fr>) -> Result<UserVar<Fr, Data>, SynthesisError> {
+///     let mut u = old_user.clone();
+///     u.data.bad_rep =
+///     UInt8::conditionally_select(
+///         &args.is_eq(&FpVar::Constant(Fr::from(0)))?,
+///         &u.data.bad_rep,
+///         &u.data.bad_rep.wrapping_add(&UInt8::constant(10))
+///     )?;
+///     Ok(u)
+/// }
+///
+///
+/// fn main () {
+///     let cb = Callback {
+///         method_id: Id::from(0),
+///         expirable: false,
+///         expiration: Time::from(10),
+///         method: callback,
+///         predicate: enforce_callback
+///     };
+///
+///     let cb_methods = vec![cb.clone()];
+///
+///     let int = Interaction {
+///         meth: (method, predicate),
+///         callbacks: [cb.clone()],
+///     };
+///
+///     let ex: PubScan = PubScanArgs {
+///         memb_pub: [(); 1],
+///         is_memb_data_const: true,
+///         nmemb_pub: [(); 1],
+///         is_nmemb_data_const: true,
+///         cur_time: Fr::from(0),
+///         bulletin: DummyStore,
+///         cb_methods: cb_methods.clone(),
+///     };
+///
+///     let mut rng = thread_rng();
+///
+///     let (pk, vk) = int.generate_keys::<Poseidon<2>, Groth, NoSigOTP<Fr>, DummyStore>(&mut rng, Some(()), None, false);
+///
+///     let inter = get_scan_interaction::<_, Data, _, _, NoSigOTP<Fr>, DummyStore, Poseidon<2>, 1>();
+/// }
+/// ```
 pub fn get_scan_interaction<
     F: PrimeField + Absorb,
     U: UserData<F>,
@@ -668,5 +1044,3 @@ where
         callbacks: [],
     }
 }
-
-// PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMCBS>

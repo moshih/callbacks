@@ -20,11 +20,12 @@ use rand::{distributions::Standard, prelude::Distribution, Rng};
 #[doc(cfg(feature = "folding"))]
 use crate::generic::fold::FoldSer;
 
+/// A UOV signature.
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct UOVSig<F: PrimeField, const N: usize, const M: usize> {
-    pub preimage: Vec<F>,
-    pub n: PhantomData<[(); N]>,
-    pub m: PhantomData<[(); M]>,
+    preimage: Vec<F>,
+    n: PhantomData<[(); N]>,
+    m: PhantomData<[(); M]>,
 }
 
 impl<F: PrimeField, const N: usize, const M: usize> Default for UOVSig<F, N, M> {
@@ -37,11 +38,12 @@ impl<F: PrimeField, const N: usize, const M: usize> Default for UOVSig<F, N, M> 
     }
 }
 
+/// A UOV signature in-circuit.
 #[derive(Clone)]
 pub struct UOVSigVar<F: PrimeField, const N: usize, const M: usize> {
-    pub preimage: Vec<FpVar<F>>,
-    pub n: PhantomData<[(); N]>,
-    pub m: PhantomData<[(); M]>,
+    preimage: Vec<FpVar<F>>,
+    n: PhantomData<[(); N]>,
+    m: PhantomData<[(); M]>,
 }
 
 impl<F: PrimeField, const N: usize, const M: usize> Default for UOVSigVar<F, N, M> {
@@ -124,12 +126,13 @@ impl<F: PrimeField, const N: usize, const M: usize> AllocVar<UOVSig<F, N, M>, F>
     }
 }
 
+/// A UOV public verification key.
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct UOVPubkey<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> {
-    pub data: Vec<F>,
-    pub n: PhantomData<[(); N]>,
-    pub m: PhantomData<[(); M]>,
-    pub h: PhantomData<H>,
+    data: Vec<F>,
+    n: PhantomData<[(); N]>,
+    m: PhantomData<[(); M]>,
+    h: PhantomData<H>,
 }
 
 impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Default
@@ -149,11 +152,12 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Default
     }
 }
 
+/// A public verification key in-circuit.
 #[derive(Clone)]
 pub struct UOVPubkeyVar<F: PrimeField, const N: usize, const M: usize> {
-    pub data: Vec<FpVar<F>>,
-    pub n: PhantomData<[(); N]>,
-    pub m: PhantomData<[(); M]>,
+    data: Vec<FpVar<F>>,
+    n: PhantomData<[(); N]>,
+    m: PhantomData<[(); M]>,
 }
 
 impl<F: PrimeField, const N: usize, const M: usize> Default for UOVPubkeyVar<F, N, M> {
@@ -264,23 +268,25 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Pubkey<F>
     }
 }
 
+/// A UOV private signing key.
 #[derive(Clone, Default, Debug)]
 pub struct UOVPrivkey<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> {
-    pub o: DMatrix<F>,
-    pub s_i: Vec<DMatrix<F>>,
-    pub p1s: Vec<DMatrix<F>>,
-    pub p2s: Vec<DMatrix<F>>,
-    pub p3s: Vec<DMatrix<F>>,
-    pub n: PhantomData<[(); N]>,
-    pub m: PhantomData<[(); M]>,
-    pub h: PhantomData<H>,
+    o: DMatrix<F>,
+    s_i: Vec<DMatrix<F>>,
+    p1s: Vec<DMatrix<F>>,
+    p2s: Vec<DMatrix<F>>,
+    p3s: Vec<DMatrix<F>>,
+    n: PhantomData<[(); N]>,
+    m: PhantomData<[(); M]>,
+    h: PhantomData<H>,
 }
 
+/// A compressed UOV private key.
 #[derive(Clone, Default, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct UOVCompressedPrivkey<F: PrimeField, const N: usize, const M: usize> {
-    pub seed: Vec<F>,
-    pub n: PhantomData<[(); N]>,
-    pub m: PhantomData<[(); M]>,
+    seed: Vec<F>,
+    n: PhantomData<[(); N]>,
+    m: PhantomData<[(); M]>,
 }
 
 impl<F: PrimeField + Absorb, H: FieldHash<F>, const N: usize, const M: usize> Privkey<F>
@@ -590,6 +596,7 @@ fn rref_solve<F: PrimeField>(matrix: &DMatrix<F>) -> Option<DVector<F>> {
     Some(m.column(cols - 1).into_owned())
 }
 
+/// The UOV Signature scheme. Implements [`Signature`].
 #[derive(Clone, Default, Debug)]
 pub struct UOV<F: PrimeField + Absorb, H: FieldHash<F>, const N: usize, const M: usize> {
     _f: PhantomData<F>,
@@ -614,7 +621,12 @@ where
     type Privkey = UOVPrivkey<F, H, N, M>;
 }
 
+/// Testing setting for UOV signatures.
 pub type TestUOV<F> = UOV<F, Poseidon<2>, 15, 6>;
+/// Bleeding edge security.
 pub type BleedingUOV<F> = UOV<F, Poseidon<2>, 80, 35>;
+/// Standard L1 security. Note that while the L1 parameters are identical to UOV, the base field is
+/// much larger.
 pub type L1UOV<F> = UOV<F, Poseidon<2>, 112, 44>;
+/// Standard L2 security.
 pub type L2UOV<F> = UOV<F, Poseidon<2>, 160, 64>;
