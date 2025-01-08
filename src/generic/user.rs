@@ -906,7 +906,6 @@ where
         CBArgs: Clone + std::fmt::Debug,
         CBArgsVar: AllocVar<CBArgs, F> + Clone,
         Crypto: AECipherSigZK<F, CBArgs>,
-        Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
@@ -1141,7 +1140,6 @@ where
         CBArgs: Clone + std::fmt::Debug,
         CBArgsVar: AllocVar<CBArgs, F> + Clone,
         Crypto: AECipherSigZK<F, CBArgs>,
-        Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
         const NUMCBS: usize,
     >(
@@ -1168,7 +1166,7 @@ where
 
         let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
 
-        self.constraint_interact::<H, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, Crypto, Snark, Bul, NUMCBS>(
+        self.constraint_interact::<H, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, Crypto, Bul, NUMCBS>(
             rng,
             method,
             rpks,
@@ -1477,7 +1475,6 @@ where
         CBArgsVar: AllocVar<CBArgs, F> + Clone,
         Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar> + PartialEq + Eq,
         CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
-        Snark: SNARK<F, Error = SynthesisError>,
         Bul: PublicUserBul<F, U>,
         const NUMSCANS: usize,
     >(
@@ -1565,7 +1562,7 @@ where
                 .unwrap_or_else(|_| panic!("Unexpected failure.")),
         };
 
-        let out = self.constraint_interact::<H, PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>, PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>, CBArgs, CBArgsVar, Crypto, Snark, Bul, 0>(
+        let out = self.constraint_interact::<H, PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>, PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>, CBArgs, CBArgsVar, Crypto, Bul, 0>(
             rng,
             get_scan_interaction::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>(),
             [],
@@ -1630,7 +1627,7 @@ where
     ///
     ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(1), last_interacted_time: Time::from(0) }, &mut rng);
     ///
-    ///     let result = u.prove_statement::<Poseidon<2>, _, _, _, _, Groth>(&mut rng, predicate, &pk, (), (), false).unwrap();
+    ///     let result = u.prove_statement::<Poseidon<2>, _, _, _, _, Groth>(&mut rng, predicate, &pk, (), ()).unwrap();
     ///
     ///     assert_eq!(result.object, u.commit::<Poseidon<2>>());
     /// }
@@ -1649,7 +1646,6 @@ where
         pk: &Snark::ProvingKey,
         pub_args: PubArgs,
         priv_args: PrivArgs,
-        print_constraints: bool,
     ) -> Result<ProveResult<F, Snark>, SynthesisError> {
         let ppcirc: ProvePredicateCircuit<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> =
             ProvePredicateCircuit {
@@ -1665,19 +1661,46 @@ where
         ppcirc.clone().generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
-        if print_constraints {
-            println!(
-                "Constraints for proving statement: {}",
-                new_cs.num_constraints()
-            );
-        }
-
         let proof = Snark::prove(pk, ppcirc, rng)?;
 
         Ok(ProveResult {
             object: self.commit::<H>(),
             proof,
         })
+    }
+
+    /// Get the constraint system for proving a statement on a user.
+    ///
+    /// Useful for debugging.
+    ///
+    /// See [`User::prove_statement`] for more documentation.
+    pub fn constraint_prove_statement<
+        H: FieldHash<F>,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        Snark: SNARK<F, Error = SynthesisError>,
+    >(
+        &self,
+        predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+    ) -> Result<ConstraintSystemRef<F>, SynthesisError> {
+        let ppcirc: ProvePredicateCircuit<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> =
+            ProvePredicateCircuit {
+                priv_user: self.clone(),
+                pub_com: self.commit::<H>(),
+                priv_args,
+
+                pub_args,
+                associated_method: predicate,
+            };
+
+        let new_cs = ConstraintSystem::<F>::new_ref();
+        ppcirc.clone().generate_constraints(new_cs.clone())?;
+
+        Ok(new_cs)
     }
 
     /// Prove a statement about the user object, along with membership in some bulletin.
@@ -1751,7 +1774,7 @@ where
     ///
     ///     <UOVObjStore<Fr> as JoinableBulletin<Fr, Data>>::join_bul(&mut obj_store, u.commit::<Poseidon<2>>(), ()).unwrap();
     ///
-    ///     let result = u.prove_statement_and_in::<Poseidon<2>, _, _, _, _, Groth, UOVObjStore<Fr>>(&mut rng, predicate, &pk, (obj_store.get_signature_of(&u.commit::<Poseidon<2>>()).unwrap(), obj_store.get_pubkey()), true, (), (), false).unwrap();
+    ///     let result = u.prove_statement_and_in::<Poseidon<2>, _, _, _, _, Groth, UOVObjStore<Fr>>(&mut rng, predicate, &pk, (obj_store.get_signature_of(&u.commit::<Poseidon<2>>()).unwrap(), obj_store.get_pubkey()), true, (), ()).unwrap();
     ///
     /// }
     /// ```
@@ -1772,7 +1795,6 @@ where
         is_memb_data_const: bool,
         pub_args: PubArgs,
         priv_args: PrivArgs,
-        print_constraints: bool,
     ) -> Result<Snark::Proof, SynthesisError> {
         let ppcirc: ProvePredInCircuit<F, H, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, Bul> =
             ProvePredInCircuit {
@@ -1791,16 +1813,48 @@ where
         ppcirc.clone().generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
-        if print_constraints {
-            println!(
-                "Constraints for proving statement + in storage: {}",
-                new_cs.num_constraints()
-            );
-        }
-
         let proof = Snark::prove(pk, ppcirc, rng)?;
 
         Ok(proof)
+    }
+
+    /// Get the constraint system for proving a statement and membership on a user.
+    ///
+    /// Useful for debugging.
+    ///
+    /// See [`User::prove_statement_and_in`] for more documentation.
+    pub fn constraint_prove_statement_and_in<
+        H: FieldHash<F>,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        Bul: PublicUserBul<F, U>,
+    >(
+        &self,
+        predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+        memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        is_memb_data_const: bool,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+    ) -> Result<ConstraintSystemRef<F>, SynthesisError> {
+        let ppcirc: ProvePredInCircuit<F, H, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, Bul> =
+            ProvePredInCircuit {
+                priv_user: self.clone(),
+                priv_extra_membership_data: memb_data.0,
+                priv_args,
+                pub_extra_membership_data: memb_data.1,
+                bul_memb_is_const: is_memb_data_const,
+                pub_args,
+                associated_method: predicate,
+
+                _phantom_hash: core::marker::PhantomData,
+            };
+
+        let new_cs = ConstraintSystem::<F>::new_ref();
+        ppcirc.clone().generate_constraints(new_cs.clone())?;
+
+        Ok(new_cs)
     }
 }
 
