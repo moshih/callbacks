@@ -334,7 +334,7 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
     ///
     ///     let mut u = User::create(Data { karma: Fr::from(0), is_banned: false }, &mut rng);
     ///
-    ///     let exec_meth = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), (), false).unwrap();
+    ///     let exec_meth = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), ()).unwrap();
     ///
     ///     forum.approve_interaction_and_store::<Data, _, _, _, Poseidon<2>, 1>(exec_meth, FakeSigPrivkey::sk(), (), &dummy, (), true, &vk, 727).unwrap();
     ///

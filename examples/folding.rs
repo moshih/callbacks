@@ -236,7 +236,6 @@ fn main() {
             &pk,
             (),
             (),
-            true
         )
         .unwrap();
 
@@ -278,7 +277,6 @@ fn main() {
             &pk,
             (),
             (),
-            true,
         )
         .unwrap();
 

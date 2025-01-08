@@ -19,7 +19,9 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSynthesizer, ConstraintSystem, Namespace, SynthesisError},
+    r1cs::{
+        ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, Namespace, SynthesisError,
+    },
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
@@ -540,7 +542,7 @@ where
     ///
     ///     // Execute the method, and append a single callback to the user callback list. This
     ///     // callback is a ticket associated to `cb`.
-    ///     let _ = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), (), false).unwrap();
+    ///     let _ = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), ()).unwrap();
     ///
     ///     // Get the first callback stored in the user.
     ///     let first_callback = u.get_cb
@@ -643,7 +645,6 @@ where
     ///- `priv_args`: The private arguments passed in when calling the method.
     ///- `is_scan`: Does this function affect the callbacks? Some extra checks are removed for
     ///scanning methods which affect the callbacks. (Only set to true if necessary).
-    ///- `print_constraints`: Prints out constraint counts on proof generation.
     ///
     /// Note that **any method** may be executed: This includes methods which involve scanning.
     /// Therefore, this method captures both *the creation of callbacks*, and *the scan / ingestion of
@@ -738,7 +739,7 @@ where
     ///
     ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
     ///
-    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false, false).unwrap();
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false).unwrap();
     ///
     ///     // User has been updated according to the method
     ///     assert_eq!(u.data.num_visits, Fr::from(1));
@@ -781,7 +782,6 @@ where
         pub_args: PubArgs,
         priv_args: PrivArgs,
         is_scan: bool,
-        print_constraints: bool,
     ) -> Result<ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>, SynthesisError> {
         // Steps:
         // a) update user/self [ old user ] --> method(user) [ new user ]
@@ -876,10 +876,6 @@ where
             .generate_constraints(new_cs.clone())?;
         new_cs.is_satisfied()?;
 
-        if print_constraints {
-            println!("Constraints for interaction: {}", new_cs.num_constraints());
-        }
-
         let proof = Snark::prove(pk, exec_method_circ, rng)?;
 
         // (D) Update current object
@@ -892,6 +888,141 @@ where
             cb_com_list: issued_cb_coms,
             proof,
         })
+    }
+
+    /// Get the constraint system for an interaction.
+    ///
+    /// Useful for debugging.
+    ///
+    /// **Note that this does not modify the user, it modifies a cloned user internally.**
+    ///
+    /// See [`User::interact`] for more documentation.
+    pub fn constraint_interact<
+        H: FieldHash<F>,
+        PubArgs: Clone + std::fmt::Debug,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone + std::fmt::Debug,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        CBArgs: Clone + std::fmt::Debug,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
+        Snark: SNARK<F, Error = SynthesisError>,
+        Bul: PublicUserBul<F, U>,
+        const NUMCBS: usize,
+    >(
+        &self,
+        rng: &mut (impl CryptoRng + RngCore),
+        method: Interaction<
+            F,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            NUMCBS,
+        >,
+        rpks: [Crypto::SigPK; NUMCBS],
+        bul_data: (Bul::MembershipPub, Bul::MembershipWitness),
+        is_memb_data_const: bool,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+        is_scan: bool,
+    ) -> Result<ConstraintSystemRef<F>, SynthesisError> {
+        // Steps:
+        // a) update user/self [ old user ] --> method(user) [ new user ]
+        // b) update user's zk fields properly (new nul, new comrand, proper cblist, etc)
+        // c) generate proof of correctness for
+        //      - a) the user was properly updated via the predicate
+        //      - b) the zk statements (nul == old nul, proper cblist, etc)
+
+        // (A) update the user object
+        // Create the new zk_object from the method
+        let mut new_user = (method.meth.0)(self, pub_args.clone(), priv_args.clone());
+
+        // (B) update the new users zk fields properly
+
+        new_user.zk_fields.nul = rng.gen();
+        new_user.zk_fields.com_rand = rng.gen();
+
+        let cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS] =
+            create_cbs_from_interaction(rng, method.clone(), rpks);
+
+        let issued_callbacks: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] = cb_tik_list
+            .iter()
+            .map(|(x, _)| x.clone())
+            .collect::<Vec<CallbackCom<F, CBArgs, Crypto>>>()
+            .try_into()
+            .unwrap();
+
+        let issued_cb_coms = cb_tik_list
+            .iter()
+            .map(|(x, _)| x.commit::<H>())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        for item in issued_callbacks.iter().take(NUMCBS) {
+            let mut cb = Vec::new();
+            item.clone().serialize_compressed(&mut cb).unwrap();
+            new_user.callbacks.push(cb);
+
+            new_user.zk_fields.callback_hash = add_ticket_to_hc::<F, H, CBArgs, Crypto>(
+                new_user.zk_fields.callback_hash,
+                item.clone().cb_entry,
+            );
+        }
+
+        if !is_scan {
+            new_user.zk_fields.old_in_progress_callback_hash = new_user.zk_fields.callback_hash;
+        }
+
+        // (C) Generate proof of correctness
+        // Extract the zk fields from the objects to do bookkeeping
+
+        let out_commit = new_user.commit::<H>();
+
+        let out_nul = self.zk_fields.nul;
+
+        let exec_method_circ: ExecMethodCircuit<
+            F,
+            H,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            Crypto,
+            Bul,
+            NUMCBS,
+        > = ExecMethodCircuit {
+            priv_old_user: self.clone(),
+            priv_new_user: new_user.clone(),
+            priv_issued_callbacks: issued_callbacks,
+            priv_bul_membership_witness: bul_data.1,
+            priv_args,
+
+            pub_new_com: out_commit,
+            pub_old_nul: out_nul,
+            pub_issued_callback_coms: issued_cb_coms,
+            pub_args,
+            pub_bul_membership_data: bul_data.0,
+            bul_memb_is_const: is_memb_data_const,
+
+            associated_method: method,
+            is_scan,
+            _phantom_hash: core::marker::PhantomData,
+        };
+
+        let new_cs = ConstraintSystem::<F>::new_ref();
+        exec_method_circ
+            .clone()
+            .generate_constraints(new_cs.clone())?;
+
+        Ok(new_cs)
     }
 
     /// A specialization of the [`User::interact`] function.
@@ -944,7 +1075,6 @@ where
     ///that if the membership data is constant, the keys *must* be generated that way as well.
     ///- `pub_args`: The public arguments passed in when calling the method.
     ///- `priv_args`: The private arguments passed in when calling the method.
-    ///- `print_constraints`: Prints out constraint counts on proof generation.
     pub fn exec_method_create_cb<
         H: FieldHash<F>,
         PubArgs: Clone + std::fmt::Debug,
@@ -977,7 +1107,6 @@ where
         pk: &Snark::ProvingKey,
         pub_args: PubArgs,
         priv_args: PrivArgs,
-        print_constraints: bool,
     ) -> Result<ExecutedMethod<F, Snark, CBArgs, Crypto, NUMCBS>, SynthesisError> {
         assert!(self.scan_index.is_none());
 
@@ -993,7 +1122,61 @@ where
             pub_args,
             priv_args,
             false,
-            print_constraints,
+        )
+    }
+
+    /// Get the constraint system for executing a method and creating callbacks.
+    ///
+    /// Useful for debugging.
+    ///
+    /// **Note that this does not modify the user, it modifies a cloned user internally.**
+    ///
+    /// See [`User::exec_method_create_cb`] for more documentation.
+    pub fn constraint_exec_method_create_cb<
+        H: FieldHash<F>,
+        PubArgs: Clone + std::fmt::Debug,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone + std::fmt::Debug,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        CBArgs: Clone + std::fmt::Debug,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
+        Snark: SNARK<F, Error = SynthesisError>,
+        Bul: PublicUserBul<F, U>,
+        const NUMCBS: usize,
+    >(
+        &self,
+        rng: &mut (impl CryptoRng + RngCore),
+        method: Interaction<
+            F,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            NUMCBS,
+        >,
+        rpks: [Crypto::SigPK; NUMCBS],
+        bul: &Bul,
+        is_memb_data_const: bool,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+    ) -> Result<ConstraintSystemRef<F>, SynthesisError> {
+        assert!(self.scan_index.is_none());
+
+        let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
+
+        self.constraint_interact::<H, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, Crypto, Snark, Bul, NUMCBS>(
+            rng,
+            method,
+            rpks,
+            bul_data,
+            is_memb_data_const,
+            pub_args,
+            priv_args,
+            false,
         )
     }
 
@@ -1054,7 +1237,6 @@ where
     ///nonmembership.
     ///- `cur_time`: The time at which the scan occurs.
     ///- `cb_methods`: A list of callbacks used to produce the proof.
-    ///- `print_constraints`: Prints out constraint counts on proof generation.
     ///
     /// # Example
     /// ```rust
@@ -1165,9 +1347,9 @@ where
     ///
     ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
     ///
-    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false, false).unwrap();
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false).unwrap();
     ///
-    ///     let (ps, scan_meth) = u.scan_callbacks::<Poseidon<2>, Fr, FpVar<Fr>, NoSigOTP<Fr>, DummyStore, Groth, DummyStore, 1>(&mut rng, &DummyStore, true, &pks, &DummyStore, (true, true), Time::from(25), cb_methods.clone(), false).unwrap();
+    ///     let (ps, scan_meth) = u.scan_callbacks::<Poseidon<2>, Fr, FpVar<Fr>, NoSigOTP<Fr>, DummyStore, Groth, DummyStore, 1>(&mut rng, &DummyStore, true, &pks, &DummyStore, (true, true), Time::from(25), cb_methods.clone()).unwrap();
     ///
     ///     <DummyStore as UserBul<Fr, Data>>::verify_interact_and_append::<PubScan, Groth, 0>(&mut DummyStore, scan_meth.new_object.clone(), scan_meth.old_nullifier.clone(), ps.clone(), scan_meth.cb_com_list.clone(), scan_meth.proof.clone(), None, &vks).unwrap();
     /// }
@@ -1191,7 +1373,6 @@ where
         is_memb_nmemb_const: (bool, bool),
         cur_time: Time<F>,
         cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
-        print_constraints: bool,
     ) -> Result<
         (
             PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
@@ -1278,7 +1459,121 @@ where
             ps.clone(),
             prs,
             true,
-            print_constraints,
+        )?;
+
+        Ok((ps, out))
+    }
+
+    /// Get the constraint system for scanning callbacks.
+    ///
+    /// Useful for debugging.
+    ///
+    /// **Note that this does not modify the user, it modifies a cloned user internally.**
+    ///
+    /// See [`User::scan_callbacks`] for more documentation.
+    pub fn constraint_scan_callbacks<
+        H: FieldHash<F>,
+        CBArgs: Clone + std::fmt::Debug + PartialEq + Eq,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar> + PartialEq + Eq,
+        CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
+        Snark: SNARK<F, Error = SynthesisError>,
+        Bul: PublicUserBul<F, U>,
+        const NUMSCANS: usize,
+    >(
+        &self,
+        rng: &mut (impl CryptoRng + RngCore),
+        bul: &Bul,
+        is_memb_data_const: bool,
+        cbul: &CBul,
+        is_memb_nmemb_const: (bool, bool),
+        cur_time: Time<F>,
+        cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
+    ) -> Result<
+        (
+            PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+            ConstraintSystemRef<F>,
+        ),
+        SynthesisError,
+    >
+    where
+        U::UserDataVar: CondSelectGadget<F> + EqGadget<F>,
+    {
+        let start_ind = match self.scan_index {
+            Some(ind) => {
+                assert!(NUMSCANS + ind <= self.callbacks.len());
+                ind
+            }
+            None => {
+                assert!(NUMSCANS <= self.callbacks.len());
+                0
+            }
+        };
+
+        let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
+
+        let mut vec_cbs = vec![];
+        let mut vec_memb_pub = vec![];
+        let mut vec_nmemb_pub = vec![];
+        let mut vec_memb_priv = vec![];
+        let mut vec_nmemb_priv = vec![];
+        let mut vec_enc = vec![];
+        let mut vec_times = vec![];
+
+        for i in 0..NUMSCANS {
+            let cb: CallbackCom<F, CBArgs, Crypto> = self.get_cb::<CBArgs, Crypto>(start_ind + i);
+            let data = cbul.get_membership_data(cb.get_ticket());
+            let if_in = cbul.verify_in(cb.get_ticket());
+            let (enc, time) = match if_in {
+                Some((e, t)) => (e, t),
+                None => (Crypto::Ct::default(), Time::default()),
+            };
+            vec_enc.push(enc);
+            vec_times.push(time);
+            vec_cbs.push(cb);
+            vec_memb_pub.push(data.0);
+            vec_memb_priv.push(data.1);
+            vec_nmemb_pub.push(data.2);
+            vec_nmemb_priv.push(data.3);
+        }
+
+        let ps: PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS> = PubScanArgs {
+            memb_pub: vec_memb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_pub: vec_nmemb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            bulletin: cbul.clone(),
+            is_memb_data_const: is_memb_nmemb_const.0,
+            is_nmemb_data_const: is_memb_nmemb_const.1,
+            cur_time,
+            cb_methods,
+        };
+
+        let prs: PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS> = PrivScanArgs {
+            priv_n_tickets: vec_cbs.try_into().unwrap(),
+            post_times: vec_times.try_into().unwrap(),
+            enc_args: vec_enc
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            memb_priv: vec_memb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_priv: vec_nmemb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+        };
+
+        let out = self.constraint_interact::<H, PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>, PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>, CBArgs, CBArgsVar, Crypto, Snark, Bul, 0>(
+            rng,
+            get_scan_interaction::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>(),
+            [],
+            bul_data,
+            is_memb_data_const,
+            ps.clone(),
+            prs,
+            true,
         )?;
 
         Ok((ps, out))

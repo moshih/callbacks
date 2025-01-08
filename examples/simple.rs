@@ -304,7 +304,6 @@ fn main() {
             &pk,
             (),
             (),
-            true,
         )
         .unwrap();
 
@@ -376,7 +375,6 @@ fn main() {
             &pk,
             (),
             (),
-            true,
         )
         .unwrap();
 
@@ -446,7 +444,6 @@ fn main() {
             (true, true),
             store.callback_bul.get_epoch(),
             cb_methods.clone(),
-            true,
         )
         .unwrap();
     println!(
@@ -537,7 +534,6 @@ fn main() {
             (true, true),
             store.callback_bul.get_epoch(),
             cb_methods.clone(),
-            true,
         )
         .unwrap();
 

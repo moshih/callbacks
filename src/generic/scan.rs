@@ -420,7 +420,7 @@ impl<
 ///
 ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
 ///
-///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false, false).unwrap();
+///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false).unwrap();
 ///
 ///     let cb = u.get_cb::<Fr, NoSigOTP<Fr>>(0);
 ///     let tik: FakeSigPubkey<Fr> = cb.get_ticket();
