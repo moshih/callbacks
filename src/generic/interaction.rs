@@ -524,6 +524,8 @@ where
             pub_bul_membership_data: memb_data.unwrap_or_default(),
             _phantom_hash: PhantomData,
         };
+
+        println!("ok now generating");
         Snark::circuit_specific_setup(out, rng).unwrap()
     }
 }
