@@ -525,7 +525,6 @@ where
             _phantom_hash: PhantomData,
         };
 
-        println!("ok now generating");
         Snark::circuit_specific_setup(out, rng).unwrap()
     }
 }
