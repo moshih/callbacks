@@ -265,6 +265,8 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Pubkey<F>
             check &= (t[i].is_eq(&x))?;
         }
 
+        println!("ok5");
+
         Ok(check)
     }
 }
