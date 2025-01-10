@@ -240,6 +240,7 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Pubkey<F>
         signature: Self::SigVar,
         msg: FpVar<F>,
     ) -> Result<Boolean<F>, SynthesisError> {
+        println!("asldfkjsadlfj");
         let mut t = vec![];
         t.push(H::hash_in_zk(&[msg])?);
         for i in 1..M {

@@ -594,7 +594,6 @@ impl<
     >
 {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> ArkResult<()> {
-        println!("a ");
         // Create private variables
         let old_user_var = UserVar::new_witness(ns!(cs, "old_user"), || Ok(self.priv_old_user))?;
         let new_user_var = UserVar::new_witness(ns!(cs, "new_user"), || Ok(self.priv_new_user))?;
@@ -633,8 +632,6 @@ impl<
         )?
         .enforce_equal(&Boolean::TRUE)?;
 
-        println!("c ");
-
         // Enforce any method-specific predicates
         let b = (self.associated_method.meth.1)(
             &old_user_var,
@@ -645,22 +642,16 @@ impl<
 
         b.enforce_equal(&Boolean::TRUE)?;
 
-        println!("d ");
-
         let mut old_zk_fields = old_user_var.clone().zk_fields;
         let new_zk_fields = new_user_var.clone().zk_fields;
 
         // Enforce revealed nullifier (previous state) == the old nullifier
         old_nul_var.enforce_equal(&old_zk_fields.nul)?;
 
-        println!("e ");
-
         // Enforce we are currently not sweeping.
         if !self.is_scan {
             old_zk_fields.is_ingest_over.enforce_equal(&Boolean::TRUE)?;
         }
-
-        println!("f ");
 
         if !self.is_scan {
             for i in 0..NUMCBS {
@@ -694,8 +685,6 @@ impl<
                 .is_ingest_over
                 .enforce_equal(&old_zk_fields.is_ingest_over)?;
         }
-
-        println!("g ");
 
         // Enforce that Com(new_user) == new_com
         let com = User::commit_in_zk::<H>(new_user_var)?;
