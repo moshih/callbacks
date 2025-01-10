@@ -622,8 +622,6 @@ impl<
             })?,
         };
 
-        println!("b ");
-
         // Enforce old_user in bulletin
         Bul::enforce_membership_of(
             User::commit_in_zk::<H>(old_user_var.clone())?,
