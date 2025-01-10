@@ -1899,7 +1899,9 @@ impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
         let ser_data = U::serialize_in_zk(user_var.data)?;
         let ser_fields = user_var.zk_fields.serialize()?;
         let full_dat = [ser_data.as_slice(), ser_fields.as_slice()].concat();
+        println!("ok2");
 
         H::hash_in_zk(&full_dat)
+        println!("ok3");
     }
 }
