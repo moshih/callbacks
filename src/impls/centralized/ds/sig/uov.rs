@@ -240,13 +240,11 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Pubkey<F>
         signature: Self::SigVar,
         msg: FpVar<F>,
     ) -> Result<Boolean<F>, SynthesisError> {
-        println!("ok4");
         let mut t = vec![];
         t.push(H::hash_in_zk(&[msg])?);
         for i in 1..M {
             t.push(H::hash_in_zk(&t[(i - 1)..i])?);
         }
-        println!("ok6");
 
         let mut check = Boolean::TRUE;
 
@@ -265,8 +263,6 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize> Pubkey<F>
 
             check &= (t[i].is_eq(&x))?;
         }
-
-        println!("ok5");
 
         Ok(check)
     }

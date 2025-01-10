@@ -1895,16 +1895,10 @@ impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
     pub fn commit_in_zk<H: FieldHash<F>>(
         user_var: UserVar<F, U>,
     ) -> Result<ComVar<F>, SynthesisError> {
-        println!("ok");
         let ser_data = U::serialize_in_zk(user_var.data)?;
         let ser_fields = user_var.zk_fields.serialize()?;
         let full_dat = [ser_data.as_slice(), ser_fields.as_slice()].concat();
-        println!("ok2");
 
-        println!("len: {:?}", full_dat.len());
-
-        let x = H::hash_in_zk(&full_dat);
-        println!("ok3");
-        x
+        H::hash_in_zk(&full_dat)
     }
 }
