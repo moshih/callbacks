@@ -1901,7 +1901,8 @@ impl<F: PrimeField + Absorb, U: UserData<F>> User<F, U> {
         let full_dat = [ser_data.as_slice(), ser_fields.as_slice()].concat();
         println!("ok2");
 
-        H::hash_in_zk(&full_dat)
+        let x = H::hash_in_zk(&full_dat);
         println!("ok3");
+        x
     }
 }
