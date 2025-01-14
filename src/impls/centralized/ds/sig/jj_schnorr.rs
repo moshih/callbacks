@@ -15,7 +15,7 @@ use ark_ec::{twisted_edwards::Affine, AffineRepr, CurveGroup, PrimeGroup};
 use ark_ed_on_bls12_381::{
     constraints::EdwardsVar as JubjubVar, EdwardsProjective as Jubjub, JubjubConfig,
 };
-use ark_ff::{BigInteger, PrimeField, ToConstraintField, UniformRand};
+use ark_ff::{AdditiveGroup, BigInteger, PrimeField, ToConstraintField, UniformRand};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     boolean::Boolean,
@@ -61,6 +61,15 @@ pub struct JJSchnorrPubkey(Jubjub);
 /// A public Jubjub BLS Schnorr verification key in-circuit.
 #[derive(Clone)]
 pub struct JJSchnorrPubkeyVar(JubjubVar);
+
+impl Default for JJSchnorrPubkeyVar {
+    fn default() -> Self {
+        Self(JubjubVar::new(
+            FpVar::Constant(BlsFr::ZERO),
+            FpVar::Constant(BlsFr::ZERO),
+        ))
+    }
+}
 
 /// A Jubjub BLS Schnorr signature.
 #[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize)]

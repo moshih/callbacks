@@ -11,7 +11,7 @@ use crate::{
     },
 };
 use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
-use ark_ff::{BigInteger, PrimeField, ToConstraintField, UniformRand};
+use ark_ff::{AdditiveGroup, BigInteger, PrimeField, ToConstraintField, UniformRand};
 use ark_grumpkin::{constraints::GVar, Affine as GA, Fq, Fr as F, Projective as G};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -47,6 +47,16 @@ pub struct GRSchnorrPubkey(G);
 /// A public Grumpkin BN254 Schnorr verification key in-circuit.
 #[derive(Clone)]
 pub struct GRSchnorrPubkeyVar(GVar);
+
+impl Default for GRSchnorrPubkeyVar {
+    fn default() -> Self {
+        Self(GVar::new(
+            FpVar::Constant(Fq::ZERO),
+            FpVar::Constant(Fq::ZERO),
+            FpVar::Constant(Fq::ZERO),
+        ))
+    }
+}
 
 /// A Grumpkin BN254 Schnorr signature.
 #[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize)]
