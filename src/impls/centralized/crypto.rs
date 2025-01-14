@@ -265,9 +265,9 @@ where
     F: PrimeField,
     TVar: AllocVar<T, F>,
 {
-    _f: PhantomData<F>,
-    _msg: PhantomData<T>,
-    _var: PhantomData<TVar>,
+    _f: PhantomData<fn() -> F>,
+    _msg: PhantomData<fn() -> T>,
+    _var: PhantomData<fn() -> TVar>,
 }
 
 impl<F: PrimeField, T, TVar: AllocVar<T, F>> NoEnc<F, T, TVar> {
@@ -319,15 +319,13 @@ impl<F: PrimeField, T, TVar: AllocVar<T, F>> CanonicalSerialize for NoEnc<F, T, 
     }
 }
 
-impl<F: PrimeField, T: Sync, TVar: AllocVar<T, F> + Sync> Valid for NoEnc<F, T, TVar> {
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> Valid for NoEnc<F, T, TVar> {
     fn check(&self) -> Result<(), ark_serialize::SerializationError> {
         Ok(())
     }
 }
 
-impl<F: PrimeField, T: Sync, TVar: AllocVar<T, F> + Sync> CanonicalDeserialize
-    for NoEnc<F, T, TVar>
-{
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> CanonicalDeserialize for NoEnc<F, T, TVar> {
     fn deserialize_with_mode<R: std::io::Read>(
         _reader: R,
         _compress: ark_serialize::Compress,
