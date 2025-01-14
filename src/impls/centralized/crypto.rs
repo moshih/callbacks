@@ -15,12 +15,13 @@ use ark_relations::{
     ns,
     r1cs::{Namespace, SynthesisError},
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Valid};
 use core::borrow::Borrow;
 use rand::{
     distributions::{Distribution, Standard},
     CryptoRng, Rng, RngCore,
 };
+use std::marker::PhantomData;
 
 use ark_r1cs_std::convert::ToConstraintFieldGadget;
 use ark_relations::r1cs::ToConstraintField;
@@ -248,4 +249,173 @@ impl<F: PrimeField> FoldSer<F, PlainTikCryptoVar<F>> for PlainTikCrypto<F> {
     ) -> Result<Vec<crate::generic::object::SerVar<F>>, SynthesisError> {
         Ok(vec![var.0.clone()])
     }
+}
+
+/// A cipher which does no encryption. This is for centralized settings when encryption is not
+/// necessary on arguments, if arguments can be public.
+///
+/// Note that this does lose some security even for a centralized system, as people can see
+/// arguments passed to callbacks. However, in scenarios where argument hiding is not a concern,
+/// this will behave as a cipher.
+///
+/// This still uses [`PlainTikCrypto`] for tickets, as tickets must still be plain random values.
+#[derive(Clone)]
+pub struct NoEnc<F, T, TVar>
+where
+    F: PrimeField,
+    TVar: AllocVar<T, F>,
+{
+    _f: PhantomData<F>,
+    _msg: PhantomData<T>,
+    _var: PhantomData<TVar>,
+}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> NoEnc<F, T, TVar> {
+    /// Fetches a fake encryption or decryption key for the nonexistent cipher.
+    pub fn key() -> Self {
+        Self {
+            _f: PhantomData,
+            _msg: PhantomData,
+            _var: PhantomData,
+        }
+    }
+}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> std::fmt::Debug for NoEnc<F, T, TVar> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NoEnc")
+    }
+}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> Default for NoEnc<F, T, TVar> {
+    fn default() -> Self {
+        Self {
+            _f: PhantomData,
+            _msg: PhantomData,
+            _var: PhantomData,
+        }
+    }
+}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> PartialEq for NoEnc<F, T, TVar> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> Eq for NoEnc<F, T, TVar> {}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> CanonicalSerialize for NoEnc<F, T, TVar> {
+    fn serialize_with_mode<W: std::io::Write>(
+        &self,
+        _writer: W,
+        _compress: ark_serialize::Compress,
+    ) -> Result<(), ark_serialize::SerializationError> {
+        Ok(())
+    }
+
+    fn serialized_size(&self, _compress: ark_serialize::Compress) -> usize {
+        0
+    }
+}
+
+impl<F: PrimeField, T: Sync, TVar: AllocVar<T, F> + Sync> Valid for NoEnc<F, T, TVar> {
+    fn check(&self) -> Result<(), ark_serialize::SerializationError> {
+        Ok(())
+    }
+}
+
+impl<F: PrimeField, T: Sync, TVar: AllocVar<T, F> + Sync> CanonicalDeserialize
+    for NoEnc<F, T, TVar>
+{
+    fn deserialize_with_mode<R: std::io::Read>(
+        _reader: R,
+        _compress: ark_serialize::Compress,
+        _validate: ark_serialize::Validate,
+    ) -> Result<Self, ark_serialize::SerializationError> {
+        Ok(Self {
+            _f: PhantomData,
+            _msg: PhantomData,
+            _var: PhantomData,
+        })
+    }
+}
+
+impl<F: PrimeField, T: Clone, TVar: AllocVar<T, F>> ToConstraintField<F> for NoEnc<F, T, TVar> {
+    fn to_field_elements(&self) -> Option<Vec<F>> {
+        Some(vec![])
+    }
+}
+
+impl<F: PrimeField, T: Clone, TVar: AllocVar<T, F>> ToConstraintFieldGadget<F>
+    for NoEnc<F, T, TVar>
+{
+    fn to_constraint_field(&self) -> Result<Vec<FpVar<F>>, SynthesisError> {
+        Ok(vec![])
+    }
+}
+
+impl<F: PrimeField, T, TVar: AllocVar<T, F>> AllocVar<NoEnc<F, T, TVar>, F> for NoEnc<F, T, TVar> {
+    fn new_variable<Q: Borrow<NoEnc<F, T, TVar>>>(
+        _cs: impl Into<Namespace<F>>,
+        _f: impl FnOnce() -> Result<Q, SynthesisError>,
+        _mode: AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self {
+            _f: PhantomData,
+            _msg: PhantomData,
+            _var: PhantomData,
+        })
+    }
+}
+
+impl<F: PrimeField, T: Clone, TVar: AllocVar<T, F> + Clone> CPACipher<F> for NoEnc<F, T, TVar> {
+    type M = T;
+    type C = T;
+    type MV = TVar;
+    type CV = TVar;
+
+    type KeyVar = NoEnc<F, T, TVar>;
+
+    fn keygen(_rng: &mut (impl CryptoRng + RngCore)) -> Self {
+        Self {
+            _f: PhantomData,
+            _msg: PhantomData,
+            _var: PhantomData,
+        }
+    }
+
+    fn encrypt(&self, message: Self::M) -> Self::C {
+        message
+    }
+
+    fn decrypt(&self, ciphertext: Self::C) -> Self::M {
+        ciphertext
+    }
+
+    fn decrypt_in_zk(_key: Self::KeyVar, ciphertext: Self::CV) -> Result<Self::MV, SynthesisError> {
+        Ok(ciphertext)
+    }
+}
+
+impl<F: PrimeField, A: Clone + Default + Sync, AVar: AllocVar<A, F> + Clone + Sync>
+    AECipherSigZK<F, A> for NoEnc<F, A, AVar>
+where
+    Standard: Distribution<F>,
+{
+    type Sig = ();
+    type SigPK = FakeSigPubkey<F>;
+    type SigPKV = FakeSigPubkeyVar<F>;
+
+    type SigSK = FakeSigPrivkey<F>;
+
+    type AV = AVar;
+
+    type Ct = A;
+
+    type EncKey = NoEnc<F, A, AVar>;
+
+    type EncKeyVar = NoEnc<F, A, AVar>;
+
+    type Rand = F;
 }
