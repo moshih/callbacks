@@ -376,7 +376,7 @@ impl CondSelectGadget<BlsFr> for JJSchnorrPubkeyVar {
 }
 
 /// The Schnorr signature scheme, on the BLS curve. Implements [`Signature`].
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct JubjubSchnorr;
 
 impl Signature<F> for JubjubSchnorr {
