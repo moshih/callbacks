@@ -116,3 +116,9 @@ pub trait Signature<F: PrimeField>: Clone {
 
 /// UOV Signatures for fast in-circuit verification.
 pub mod uov;
+
+/// Schnorr Signatures over Jubjub and BLS for in-circuit verification.
+pub mod jj_schnorr;
+
+/// Schnorr signatures over Grumpkin and bn254 for in-circuit verification.
+pub mod gr_schnorr;
