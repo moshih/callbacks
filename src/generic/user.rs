@@ -1604,6 +1604,8 @@ where
     /// # use ark_r1cs_std::prelude::UInt8;
     /// # use zk_callbacks::impls::dummy::DummyStore;
     /// # use ark_r1cs_std::select::CondSelectGadget;
+    /// # use ark_snark::SNARK;
+    /// # use ark_ff::ToConstraintField;
     /// # use zk_callbacks::generic::interaction::generate_keys_for_statement;
     /// # use zk_callbacks::impls::centralized::crypto::{NoSigOTP};
     /// # type Groth = Groth16<E>;
@@ -1630,6 +1632,16 @@ where
     ///     let result = u.prove_statement::<Poseidon<2>, _, _, _, _, Groth>(&mut rng, predicate, &pk, (), ()).unwrap();
     ///
     ///     assert_eq!(result.object, u.commit::<Poseidon<2>>());
+    ///
+    ///     let mut pub_inputs = vec![];
+    ///
+    ///     pub_inputs.extend_from_slice(&result.object.to_field_elements().unwrap());
+    ///     pub_inputs.extend_from_slice(&().to_field_elements().unwrap());
+    ///
+    ///     let out = Groth::verify(&vk, &pub_inputs, &result.proof).unwrap();
+    ///
+    ///     assert!(out);
+    ///
     /// }
     /// ```
     pub fn prove_statement<
