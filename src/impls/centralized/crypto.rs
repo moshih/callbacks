@@ -396,8 +396,8 @@ impl<F: PrimeField, T: Clone, TVar: AllocVar<T, F> + Clone> CPACipher<F> for NoE
     }
 }
 
-impl<F: PrimeField, A: Clone + Default + Sync, AVar: AllocVar<A, F> + Clone + Sync>
-    AECipherSigZK<F, A> for NoEnc<F, A, AVar>
+impl<F: PrimeField, A: Clone + Default, AVar: AllocVar<A, F> + Clone> AECipherSigZK<F, A>
+    for NoEnc<F, A, AVar>
 where
     Standard: Distribution<F>,
 {
