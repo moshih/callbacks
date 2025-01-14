@@ -36,16 +36,6 @@ type FV = FpVar<Fq>;
 
 const SCHNORR_HASH_SEPARATOR: u8 = 0x03;
 
-/// Converts an element of a curve's scalar field into an element of the base field
-fn fr_to_fq<C, Fq>(x: C::ScalarField) -> Fq
-where
-    C: CurveGroup<BaseField = Fq>,
-    Fq: PrimeField,
-{
-    let bits = x.into_bigint().to_bits_le();
-    Fq::from_bigint(Fq::BigInt::from_bits_le(&bits)).unwrap()
-}
-
 /// A private Grumpkin BN254 Schnorr signing key.
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct GRSchnorrPrivkey(F);
