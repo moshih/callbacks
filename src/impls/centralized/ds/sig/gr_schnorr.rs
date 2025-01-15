@@ -37,26 +37,32 @@ type FV = FpVar<Fq>;
 const SCHNORR_HASH_SEPARATOR: u8 = 0x03;
 
 /// A private Grumpkin BN254 Schnorr signing key.
-#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct GRSchnorrPrivkey(F);
 
 /// A public Grumpkin BN254 Schnorr verification key.
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Default, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, CanonicalSerialize, CanonicalDeserialize)]
 pub struct GRSchnorrPubkey(G);
+
+impl Default for GRSchnorrPubkey {
+    fn default() -> Self {
+        Self(G::generator())
+    }
+}
 
 /// A public Grumpkin BN254 Schnorr verification key in-circuit.
 #[derive(Clone)]
 pub struct GRSchnorrPubkeyVar(GVar);
 
-impl Default for GRSchnorrPubkeyVar {
-    fn default() -> Self {
-        Self(GVar::new(
-            FpVar::Constant(Fq::ZERO),
-            FpVar::Constant(Fq::ZERO),
-            FpVar::Constant(Fq::ZERO),
-        ))
-    }
-}
+// impl Default for GRSchnorrPubkeyVar {
+//     fn default() -> Self {
+//         Self(GVar::new(
+//             FpVar::Constant(Fq::ZERO),
+//             FpVar::Constant(Fq::ZERO),
+//             FpVar::Constant(Fq::ZERO),
+//         ))
+//     }
+// }
 
 /// A Grumpkin BN254 Schnorr signature.
 #[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize)]
@@ -238,16 +244,25 @@ impl Privkey<Fq> for GRSchnorrPrivkey {
 
 impl ToConstraintField<Fq> for GRSchnorrPubkey {
     fn to_field_elements(&self) -> Option<Vec<Fq>> {
-        let mut buf: Vec<Fq> = Vec::new();
-        buf.extend_from_slice(&self.0.into_affine().to_field_elements().unwrap());
+        let mut vector: Vec<Fq> = Vec::new();
 
-        Some(buf)
+        vector.extend_from_slice(&self.0.into_affine().x.to_field_elements().unwrap());
+        vector.extend_from_slice(&self.0.into_affine().y.to_field_elements().unwrap());
+        vector.push(Fq::from(!self.0.into_affine().infinity));
+
+        Some(vector)
     }
 }
 
 impl ToConstraintFieldGadget<Fq> for GRSchnorrPubkeyVar {
     fn to_constraint_field(&self) -> Result<Vec<FpVar<Fq>>, SynthesisError> {
-        self.0.to_constraint_field()
+        let mut vector: Vec<FpVar<Fq>> = Vec::new();
+
+        vector.extend_from_slice(&self.0.to_affine()?.x.to_constraint_field()?);
+        vector.extend_from_slice(&self.0.to_affine()?.y.to_constraint_field()?);
+        vector.extend((!self.0.to_affine()?.infinity).to_constraint_field()?);
+
+        Ok(vector)
     }
 }
 
@@ -275,10 +290,14 @@ impl AllocVar<GRSchnorrPubkey, Fq> for GRSchnorrPubkeyVar {
 
         res.and_then(|pk| {
             let pk = pk.borrow();
-            let aff_pk = pk.0.into_affine();
+            let x = <FpVar<Fq>>::new_variable(ns!(cs, "entry_x"), || Ok(pk.0.x), mode)?;
 
-            let jj_v =
-                <GVar as AllocVar<GA, _>>::new_variable(ns!(cs, "entry"), || Ok(&aff_pk), mode)?;
+            let y = <FpVar<Fq>>::new_variable(ns!(cs, "entry_y"), || Ok(pk.0.y), mode)?;
+
+            let z = <FpVar<Fq>>::new_variable(ns!(cs, "entry_z"), || Ok(pk.0.z), mode)?;
+
+            let jj_v = GVar::new(x, y, z);
+            // let jj_v = GVar::new_variable(ns!(cs, "entry"), || Ok(pk.0), mode)?;
 
             Ok(Self(jj_v))
         })

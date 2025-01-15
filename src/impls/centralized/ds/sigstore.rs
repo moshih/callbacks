@@ -9,7 +9,7 @@ use crate::{
     },
     impls::{
         centralized::{
-            crypto::{FakeSigPubkey, FakeSigPubkeyVar, NoSigOTP},
+            crypto::{FakeSigPubkey, FakeSigPubkeyVar, NoEnc, NoSigOTP},
             ds::{
                 sig::{
                     gr_schnorr::GrumpkinSchnorr, jj_schnorr::JubjubSchnorr, uov::BleedingUOV,
@@ -23,9 +23,11 @@ use crate::{
 };
 use ark_bls12_381::Fr as BlsFr;
 use ark_crypto_primitives::sponge::Absorb;
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, ToConstraintField};
 use ark_grumpkin::Fq as BnFr;
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
+use ark_r1cs_std::{
+    alloc::AllocVar, convert::ToConstraintFieldGadget, fields::fp::FpVar, prelude::Boolean,
+};
 use ark_relations::r1cs::SynthesisError;
 use rand::{
     distributions::{Distribution, Standard},
@@ -333,24 +335,26 @@ where
 ///
 /// To prove nonmembership, one uses the [`NonmembStore`] circuit.
 #[derive(Clone, Default, Debug)]
-pub struct CallbackStore<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>>
+pub struct CallbackStore<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>, Args>
 where
     Standard: Distribution<F>,
+    Args: Clone + ToConstraintField<F>,
 {
     privkey: S::Privkey,
     /// The public key for verifying membership of tickets.
     pub pubkey: S::Pubkey,
     /// The called tickets.
-    pub memb_called_cbs: Vec<(FakeSigPubkey<F>, F, Time<F>)>,
+    pub memb_called_cbs: Vec<(FakeSigPubkey<F>, Args, Time<F>)>,
     /// The signatures on the called tickets.
     pub memb_cbs_sigs: Vec<S::Sig>,
     /// A nonmembership bulletin for proofs of nonmembership on called tickets.
     pub nmemb_bul: B,
 }
 
-impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> CallbackStore<F, S, B>
+impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>, Args> CallbackStore<F, S, B, Args>
 where
     Standard: Distribution<F>,
+    Args: Clone + ToConstraintField<F>,
 {
     /// Construct a new callback store.
     ///
@@ -370,7 +374,7 @@ where
     /// this database.
     pub fn from(
         privkey: S::Privkey,
-        db: Vec<(FakeSigPubkey<F>, F, Time<F>, S::Sig)>,
+        db: Vec<(FakeSigPubkey<F>, Args, Time<F>, S::Sig)>,
         nmemb_bul: B,
     ) -> Self {
         let pubkey = S::get_pubkey(&privkey);
@@ -392,7 +396,7 @@ where
     /// more information.
     pub fn from_only_memb(
         privkey: S::Privkey,
-        db: Vec<(FakeSigPubkey<F>, F, Time<F>, S::Sig)>,
+        db: Vec<(FakeSigPubkey<F>, Args, Time<F>, S::Sig)>,
     ) -> Self {
         let mut rng = thread_rng();
 
@@ -411,12 +415,12 @@ where
     }
 
     /// Get the database (this is the membership database).
-    pub fn get_db(&self) -> Vec<(FakeSigPubkey<F>, F, Time<F>, S::Sig)> {
+    pub fn get_db(&self) -> Vec<(FakeSigPubkey<F>, Args, Time<F>, S::Sig)> {
         (0..(self.memb_called_cbs.len()))
             .map(|x| {
                 (
                     self.memb_called_cbs[x].0.clone(),
-                    self.memb_called_cbs[x].1,
+                    self.memb_called_cbs[x].1.clone(),
                     self.memb_called_cbs[x].2,
                     self.memb_cbs_sigs[x].clone(),
                 )
@@ -431,15 +435,11 @@ where
         let mut rng = thread_rng();
         let mut v = vec![];
         for i in 0..self.memb_called_cbs.len() {
-            let out = S::sign(
-                &self.privkey,
-                &mut rng,
-                <Poseidon<2>>::hash(&[
-                    self.memb_called_cbs[i].0.to(),
-                    self.memb_called_cbs[i].1,
-                    self.memb_called_cbs[i].2,
-                ]),
-            );
+            let mut v2 = vec![];
+            v2.push(self.memb_called_cbs[i].0.to());
+            v2.extend_from_slice(&self.memb_called_cbs[i].1.to_field_elements().unwrap());
+            v2.push(self.memb_called_cbs[i].2);
+            let out = S::sign(&self.privkey, &mut rng, <Poseidon<2>>::hash(&v2));
 
             match out {
                 Some(x) => {
@@ -492,7 +492,7 @@ where
 }
 
 impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>>
-    PublicCallbackBul<F, F, NoSigOTP<F>> for CallbackStore<F, S, B>
+    PublicCallbackBul<F, F, NoSigOTP<F>> for CallbackStore<F, S, B, F>
 where
     Standard: Distribution<F>,
 {
@@ -567,8 +567,91 @@ where
     }
 }
 
+impl<
+        F: PrimeField + Absorb,
+        S: Signature<F>,
+        B: NonmembStore<F>,
+        A: Clone + Default + ToConstraintField<F>,
+        AVar: Clone + AllocVar<A, F> + ToConstraintFieldGadget<F>,
+    > PublicCallbackBul<F, A, NoEnc<F, A, AVar>> for CallbackStore<F, S, B, A>
+where
+    Standard: Distribution<F>,
+{
+    type MembershipWitness = S::Sig;
+
+    type MembershipWitnessVar = S::SigVar;
+
+    type NonMembershipWitness = B::NonMembershipWitness;
+
+    type NonMembershipWitnessVar = B::NonMembershipWitnessVar;
+
+    type MembershipPub = S::Pubkey;
+
+    type MembershipPubVar = S::PubkeyVar;
+
+    type NonMembershipPub = B::NonMembershipPub;
+
+    type NonMembershipPubVar = B::NonMembershipPubVar;
+
+    fn verify_in(&self, tik: FakeSigPubkey<F>) -> Option<(A, Time<F>)> {
+        for (t, arg, time) in &self.memb_called_cbs {
+            if t == &tik {
+                return Some((arg.clone(), *time));
+            }
+        }
+        None
+    }
+
+    fn verify_not_in(&self, tik: FakeSigPubkey<F>) -> bool {
+        self.nmemb_bul.verify_not_in(tik)
+    }
+
+    fn get_membership_data(
+        &self,
+        tik: FakeSigPubkey<F>,
+    ) -> (
+        S::Pubkey,
+        S::Sig,
+        B::NonMembershipPub,
+        B::NonMembershipWitness,
+    ) {
+        let d = self.nmemb_bul.get_nmemb(&tik);
+        match d {
+            Some((p, w)) => (self.get_pubkey(), S::Sig::default(), p, w),
+            None => (
+                self.get_pubkey(),
+                self.get_memb_witness(&tik).unwrap(),
+                B::NonMembershipPub::default(),
+                B::NonMembershipWitness::default(),
+            ),
+        }
+    }
+
+    fn enforce_membership_of(
+        tikvar: (FakeSigPubkeyVar<F>, AVar, TimeVar<F>),
+        extra_witness: Self::MembershipWitnessVar,
+        extra_pub: Self::MembershipPubVar,
+    ) -> Result<Boolean<F>, SynthesisError> {
+        let mut v = vec![tikvar.0 .0];
+
+        v.extend_from_slice(&tikvar.1.to_constraint_field()?);
+
+        v.push(tikvar.2);
+
+        S::verify_zk(extra_pub, extra_witness, <Poseidon<2>>::hash_in_zk(&v)?)
+    }
+
+    fn enforce_nonmembership_of(
+        tikvar: FakeSigPubkeyVar<F>,
+        extra_witness: Self::NonMembershipWitnessVar,
+        extra_pub: Self::NonMembershipPubVar,
+    ) -> Result<Boolean<F>, SynthesisError> {
+        B::enforce_nonmembership_of(tikvar, extra_witness, extra_pub)
+    }
+}
+
 impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> CallbackBul<F, F, NoSigOTP<F>>
-    for CallbackStore<F, S, B>
+    for CallbackStore<F, S, B, F>
 where
     Standard: Distribution<F>,
 {
@@ -591,11 +674,54 @@ where
         time: Time<F>,
     ) -> Result<(), Self::Error> {
         let mut rng = thread_rng();
-        let out = S::sign(
-            &self.privkey,
-            &mut rng,
-            <Poseidon<2>>::hash(&[tik.to(), enc_args, time]),
-        );
+        let v2 = vec![tik.to(), enc_args, time];
+        let out = S::sign(&self.privkey, &mut rng, <Poseidon<2>>::hash(&v2));
+
+        match out {
+            Some(x) => {
+                self.memb_called_cbs.push((tik, enc_args, time));
+                self.memb_cbs_sigs.push(x);
+                Ok(())
+            }
+            None => Err(()),
+        }
+    }
+}
+
+impl<
+        F: PrimeField + Absorb,
+        S: Signature<F>,
+        B: NonmembStore<F>,
+        A: Clone + Default + ToConstraintField<F>,
+        AVar: Clone + AllocVar<A, F> + ToConstraintFieldGadget<F>,
+    > CallbackBul<F, A, NoEnc<F, A, AVar>> for CallbackStore<F, S, B, A>
+where
+    Standard: Distribution<F>,
+{
+    type Error = ();
+
+    fn has_never_received_tik(&self, tik: &FakeSigPubkey<F>) -> bool {
+        for (x, _, _) in &self.memb_called_cbs {
+            if x == tik {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn append_value(
+        &mut self,
+        tik: FakeSigPubkey<F>,
+        enc_args: A,
+        _signature: (),
+        time: Time<F>,
+    ) -> Result<(), Self::Error> {
+        let mut rng = thread_rng();
+        let mut v2 = vec![];
+        v2.push(tik.to());
+        v2.extend_from_slice(&enc_args.to_field_elements().unwrap());
+        v2.push(time);
+        let out = S::sign(&self.privkey, &mut rng, <Poseidon<2>>::hash(&v2));
 
         match out {
             Some(x) => {
@@ -615,15 +741,19 @@ where
 /// Along with that, the central store stores interactions, and so acts as a centralized service
 /// provider *and* both bulletins.
 #[derive(Clone)]
-pub struct CentralStore<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>>
-where
+pub struct CentralStore<
+    F: PrimeField + Absorb,
+    S: Signature<F>,
+    B: NonmembStore<F>,
+    A: Clone + ToConstraintField<F>,
+> where
     Standard: Distribution<F>,
 {
     /// The object bulletin storing commitments.
     pub obj_bul: SigObjStore<F, S>,
 
     /// The callback bulletin storing tickets.
-    pub callback_bul: CallbackStore<F, S, B>,
+    pub callback_bul: CallbackStore<F, S, B, A>,
 
     /// A list of interactions which have occurred by their interaction id.
     pub interaction_ids: Vec<u64>,
@@ -632,8 +762,12 @@ where
     pub cb_tickets: Vec<Vec<(CallbackCom<F, F, NoSigOTP<F>>, F)>>,
 }
 
-impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> ServiceProvider<F, F, NoSigOTP<F>>
-    for CentralStore<F, S, B>
+impl<
+        F: PrimeField + Absorb,
+        S: Signature<F>,
+        B: NonmembStore<F>,
+        A: Clone + ToConstraintField<F>,
+    > ServiceProvider<F, F, NoSigOTP<F>> for CentralStore<F, S, B, A>
 where
     Standard: Distribution<F>,
 {
@@ -662,7 +796,12 @@ where
     }
 }
 
-impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> CentralStore<F, S, B>
+impl<
+        F: PrimeField + Absorb,
+        S: Signature<F>,
+        B: NonmembStore<F>,
+        A: Clone + ToConstraintField<F>,
+    > CentralStore<F, S, B, A>
 where
     Standard: Distribution<F>,
 {
@@ -678,33 +817,36 @@ where
 }
 
 /// Type alias for a central store which uses signed ranges for nonmembership.
-pub type SigStore<F, S> = CentralStore<F, S, SigRangeStore<F, S>>;
+pub type SigStore<F, S, A> = CentralStore<F, S, SigRangeStore<F, S>, A>;
 
 /// A user object store which uses UOV signatures.
 pub type UOVObjStore<F> = SigObjStore<F, BleedingUOV<F>>;
 
 /// A callback storage system which uses UOV signatures.
-pub type UOVCallbackStore<F> = CallbackStore<F, BleedingUOV<F>, SigRangeStore<F, BleedingUOV<F>>>;
+pub type UOVCallbackStore<F, A> =
+    CallbackStore<F, BleedingUOV<F>, SigRangeStore<F, BleedingUOV<F>>, A>;
 
 /// A central storage system which uses UOV signatures.
-pub type UOVStore<F> = CentralStore<F, BleedingUOV<F>, SigRangeStore<F, BleedingUOV<F>>>;
+pub type UOVStore<F, A> = CentralStore<F, BleedingUOV<F>, SigRangeStore<F, BleedingUOV<F>>, A>;
 
 /// A user object store which uses Jubjub BLS Schnorr signatures.
 pub type JJSchnorrObjStore = SigObjStore<BlsFr, JubjubSchnorr>;
 
 /// A callback storage system which uses Jubjub BLS Schnorr signatures.
-pub type JJSchnorrCallbackStore =
-    CallbackStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>>;
+pub type JJSchnorrCallbackStore<A> =
+    CallbackStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>, A>;
 
 /// A central storage system which uses Jubjub BLS Schnorr signatures.
-pub type JJSchnorrStore = CentralStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>>;
+pub type JJSchnorrStore<A> =
+    CentralStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>, A>;
 
 /// A user object store which uses Grumpkin BN254 Schnorr signatures.
 pub type GRSchnorrObjStore = SigObjStore<BnFr, GrumpkinSchnorr>;
 
 /// A callback storage system which uses Grumpkin BN254 Schnorr signatures.
-pub type GRSchnorrCallbackStore =
-    CallbackStore<BnFr, GrumpkinSchnorr, SigRangeStore<BnFr, GrumpkinSchnorr>>;
+pub type GRSchnorrCallbackStore<A> =
+    CallbackStore<BnFr, GrumpkinSchnorr, SigRangeStore<BnFr, GrumpkinSchnorr>, A>;
 
 /// A central storage system which uses Grumpkin BN254 Schnorr signatures.
-pub type GRSchnorrStore = CentralStore<BnFr, GrumpkinSchnorr, SigRangeStore<BnFr, GrumpkinSchnorr>>;
+pub type GRSchnorrStore<A> =
+    CentralStore<BnFr, GrumpkinSchnorr, SigRangeStore<BnFr, GrumpkinSchnorr>, A>;

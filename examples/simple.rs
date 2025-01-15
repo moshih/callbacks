@@ -1,4 +1,4 @@
-use ark_bn254::{Bn254 as E, Fr as F};
+use ark_bls12_381::{Bls12_381 as E, Fr as F};
 use ark_groth16::Groth16;
 use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
 use ark_relations::r1cs::{Result as ArkResult, ToConstraintField};
@@ -17,12 +17,19 @@ use zk_callbacks::{
     impls::{
         centralized::{
             crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP},
-            ds::sigstore::{UOVCallbackStore, UOVObjStore, UOVStore},
+            ds::sigstore::{
+                JJSchnorrCallbackStore, JJSchnorrObjStore, JJSchnorrStore, UOVCallbackStore,
+                UOVObjStore, UOVStore,
+            },
         },
         hash::Poseidon,
     },
     scannable_zk_object,
 };
+
+type PepegaSchnorrObjStore = UOVObjStore<F>;
+type PepegaSchnorrStore<A> = UOVStore<F, A>;
+type PepegaSchnorrCallbackStore<A> = UOVCallbackStore<F, A>;
 
 // Initialize a zk-object!
 
@@ -61,14 +68,14 @@ type Int1 = Interaction<F, TestData, (), (), (), (), CBArg, CBArgVar, 1>;
 //  - The field and user (F, TestUserData2)
 //  - The callback argument (F, FpVar<F>)
 //  - The method of providing ticket authenticity and hiding arguments (NoSigOTP<F>)
-//  - The callback bulletin (UOVCallbackStore<F>)
+//  - The callback bulletin (JJSchnorrCallbackStore<F>)
 //  - The number of callbacks
 //
 //  Note that the NoSigOTP in this case is centralized: there is no need to provide
 //  authenticity, so signatures are (), and encryption is via a OTP
 //
 //  The actual type consists of membership data and the current time (public data).
-type PubScan = PubScanArgs<F, TestData, F, FpVar<F>, Cr, UOVCallbackStore<F>, NUMSCANS>;
+type PubScan = PubScanArgs<F, TestData, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, NUMSCANS>;
 
 // Two types of interactions: updating the user normally with Int1, or updating the user with a
 // scan through IntScan.
@@ -156,7 +163,7 @@ fn main() {
 
     let start = SystemTime::now();
 
-    let mut store = UOVStore::new(&mut rng);
+    let mut store = JJSchnorrStore::new(&mut rng);
 
     println!(
         "\t (time) Generated data structures: {:?}",
@@ -176,15 +183,16 @@ fn main() {
     // about users
 
     // For circuit generation
-    let ex = PubScanArgs {
-        memb_pub: [store.callback_bul.get_pubkey(); NUMSCANS],
-        is_memb_data_const: true,
-        nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey(); NUMSCANS],
-        is_nmemb_data_const: true,
-        cur_time: F::from(0),
-        bulletin: store.callback_bul.clone(),
-        cb_methods: cb_methods.clone(),
-    };
+    let ex: PubScanArgs<F, TestData, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, NUMSCANS> =
+        PubScanArgs {
+            memb_pub: [store.callback_bul.get_pubkey(); NUMSCANS],
+            is_memb_data_const: true,
+            nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey(); NUMSCANS],
+            is_nmemb_data_const: true,
+            cur_time: F::from(0),
+            bulletin: store.callback_bul.clone(),
+            cb_methods: cb_methods.clone(),
+        };
 
     println!("[SERVER] PROOF KEY GENERATION...");
 
@@ -192,7 +200,7 @@ fn main() {
 
     // generate keys for the method described initially
     let (pk, vk) = interaction // see interaction
-        .generate_keys::<Poseidon<2>, Groth16<E>, Cr, UOVObjStore<F>>(
+        .generate_keys::<Poseidon<2>, Groth16<E>, Cr, JJSchnorrObjStore>(
             &mut rng,
             Some(store.obj_bul.get_pubkey()),
             None,
@@ -201,7 +209,7 @@ fn main() {
 
     // generate keys for the callback scan
     let (pks, vks) = get_scan_interaction::<_, _, _, _, _, _, Poseidon<2>, 1>()
-        .generate_keys::<Poseidon<2>, Groth16<E>, Cr, UOVObjStore<F>>(
+        .generate_keys::<Poseidon<2>, Groth16<E>, Cr, JJSchnorrObjStore>(
             &mut rng,
             Some(store.obj_bul.get_pubkey()),
             Some(ex),
@@ -218,7 +226,7 @@ fn main() {
         (),
         (),
         Groth16<E>,
-        UOVObjStore<F>,
+        JJSchnorrObjStore,
     >(&mut rng, some_pred, Some(store.obj_bul.get_pubkey()), None);
 
     println!(
@@ -242,7 +250,7 @@ fn main() {
     println!("[USER] Created! User: {:o}", u);
 
     // Join in as a user
-    let _ = <UOVObjStore<F> as JoinableBulletin<F, TestData>>::join_bul(
+    let _ = <JJSchnorrObjStore as JoinableBulletin<F, TestData>>::join_bul(
         &mut store.obj_bul,
         u.commit::<Poseidon<2>>(),
         (),
@@ -253,7 +261,7 @@ fn main() {
     let start = SystemTime::now();
     // Prove a statement about itself (and how it lies within the store)
     let proof = u
-        .prove_statement_and_in::<Poseidon<2>, (), (), (), (), Groth16<E>, UOVObjStore<F>>(
+        .prove_statement_and_in::<Poseidon<2>, (), (), (), (), Groth16<E>, JJSchnorrObjStore>(
             &mut rng,
             some_pred, // Specifically, this statement here (see some_pred above)
             &pki,
@@ -294,7 +302,7 @@ fn main() {
     let start = SystemTime::now();
     // Update the user in accordance with the first interaction
     let exec_method = u
-        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, Cr, Groth16<E>, UOVObjStore<F>, 1>(
+        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, Cr, Groth16<E>, JJSchnorrObjStore, 1>(
             &mut rng,
             interaction.clone(), // see interaction
             [FakeSigPubkey::pk()],
@@ -315,24 +323,27 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing...");
     let start = SystemTime::now();
 
-    let out =
-        <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<(), Groth16<E>, 1>(
-            &mut store.obj_bul,
-            exec_method.new_object.clone(),
-            exec_method.old_nullifier.clone(),
-            (),
-            exec_method.cb_com_list.clone(),
-            exec_method.proof.clone(),
-            None,
-            &vk,
-        );
+    let out = <JJSchnorrObjStore as UserBul<F, TestData>>::verify_interact_and_append::<
+        (),
+        Groth16<E>,
+        1,
+    >(
+        &mut store.obj_bul,
+        exec_method.new_object.clone(),
+        exec_method.old_nullifier.clone(),
+        (),
+        exec_method.cb_com_list.clone(),
+        exec_method.proof.clone(),
+        None,
+        &vk,
+    );
     let s1 = start.elapsed().unwrap();
     // Server checks proof on interaction with the verification key, approves it, and stores the new object into the store
 
     let start = SystemTime::now();
 
     let res = store
-        .approve_interaction_and_store::<TestData, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, (), JJSchnorrObjStore, Poseidon<2>, 1>(
             exec_method,          // output of interaction
             FakeSigPrivkey::sk(), // for authenticity: verify rerandomization of key produces
             // proper tickets (here it doesn't matter)
@@ -365,7 +376,7 @@ fn main() {
     let start = SystemTime::now();
 
     let exec_method2 = u
-        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, Cr, Groth16<E>, UOVObjStore<F>, 1>(
+        .exec_method_create_cb::<Poseidon<2>, (), (), (), (), F, FpVar<F>, Cr, Groth16<E>, JJSchnorrObjStore, 1>(
             &mut rng,
             interaction.clone(),
             [FakeSigPubkey::pk()],
@@ -387,24 +398,27 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing...");
     let start = SystemTime::now();
 
-    let out =
-        <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<(), Groth16<E>, 1>(
-            &mut store.obj_bul,
-            exec_method2.new_object.clone(),
-            exec_method2.old_nullifier.clone(),
-            (),
-            exec_method2.cb_com_list.clone(),
-            exec_method2.proof.clone(),
-            None,
-            &vk,
-        );
+    let out = <JJSchnorrObjStore as UserBul<F, TestData>>::verify_interact_and_append::<
+        (),
+        Groth16<E>,
+        1,
+    >(
+        &mut store.obj_bul,
+        exec_method2.new_object.clone(),
+        exec_method2.old_nullifier.clone(),
+        (),
+        exec_method2.cb_com_list.clone(),
+        exec_method2.proof.clone(),
+        None,
+        &vk,
+    );
 
     let s1 = start.elapsed().unwrap();
     let start = SystemTime::now();
 
     // The server approves the interaction and stores it again
     let res = store
-        .approve_interaction_and_store::<TestData, Groth16<E>, (), UOVObjStore<F>, Poseidon<2>, 1>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, (), JJSchnorrObjStore, Poseidon<2>, 1>(
             exec_method2,
             FakeSigPrivkey::sk(),
             (),
@@ -434,7 +448,7 @@ fn main() {
 
     let start = SystemTime::now();
 
-    let (ps, scan_one) = u.scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, UOVCallbackStore<F>, Groth16<E>, UOVObjStore<F>, 1>
+    let (ps, scan_one) = u.scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, Groth16<E>, JJSchnorrObjStore, 1>
         (&mut rng,
             &store.obj_bul,
             true,
@@ -455,7 +469,7 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing scan...");
     let start = SystemTime::now();
 
-    let out = <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<
+    let out = <JJSchnorrObjStore as UserBul<F, TestData>>::verify_interact_and_append::<
         PubScan,
         Groth16<E>,
         0,
@@ -475,7 +489,7 @@ fn main() {
     let start = SystemTime::now();
 
     let res = store
-        .approve_interaction_and_store::<TestData, Groth16<E>, PubScan, UOVObjStore<F>, Poseidon<2>, 0>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, PubScan, JJSchnorrObjStore, Poseidon<2>, 0>(
             scan_one,
             FakeSigPrivkey::sk(),
             ps.clone(),
@@ -510,10 +524,14 @@ fn main() {
             FakeSigPrivkey::sk(),
         )
         .unwrap();
-    store
-        .callback_bul
-        .verify_call_and_append(called.0, called.1, called.2, Time::from(0))
-        .unwrap();
+    <JJSchnorrCallbackStore<F> as CallbackBul<F, F, Cr>>::verify_call_and_append(
+        &mut store.callback_bul,
+        called.0,
+        called.1,
+        called.2,
+        Time::from(0),
+    )
+    .unwrap();
     store.callback_bul.update_epoch(&mut rng);
     println!("[SERVER] Called!... \n\n");
 
@@ -523,8 +541,20 @@ fn main() {
 
     let start = SystemTime::now();
 
+    let (_, test_cs) = u
+        .constraint_scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, JJSchnorrObjStore, 1>(
+            &mut rng,
+            &store.obj_bul,
+            true,
+            &store.callback_bul,
+            (true, true),
+            store.callback_bul.get_epoch(),
+            cb_methods.clone(),
+        )
+        .unwrap();
+
     let (ps, scan_second) = u
-        .scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, UOVCallbackStore<F>, Groth16<E>, UOVObjStore<F>, 1>(
+        .scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, Groth16<E>, JJSchnorrObjStore, 1>(
             &mut rng,
             &store.obj_bul,
             true,
@@ -542,7 +572,7 @@ fn main() {
     println!("[BULLETIN / SERVER] Verifying and storing scan...");
     let start = SystemTime::now();
 
-    let out = <UOVObjStore<F> as UserBul<F, TestData>>::verify_interact_and_append::<
+    let out = <JJSchnorrObjStore as UserBul<F, TestData>>::verify_interact_and_append::<
         PubScan,
         Groth16<E>,
         0,
@@ -561,7 +591,7 @@ fn main() {
     let start = SystemTime::now();
 
     let res = store
-        .approve_interaction_and_store::<TestData, Groth16<E>, PubScan, UOVObjStore<F>, Poseidon<2>, 0>(
+        .approve_interaction_and_store::<TestData, Groth16<E>, PubScan, JJSchnorrObjStore, Poseidon<2>, 0>(
             scan_second,
             FakeSigPrivkey::sk(),
             ps.clone(),

@@ -51,7 +51,7 @@ where
 type JubjubFr = <Jubjub as PrimeGroup>::ScalarField;
 
 /// A private Jubjub BLS Schnorr signing key.
-#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct JJSchnorrPrivkey(JubjubFr);
 
 /// A public Jubjub BLS Schnorr verification key.
@@ -259,10 +259,12 @@ impl Privkey<F> for JJSchnorrPrivkey {
 
 impl ToConstraintField<F> for JJSchnorrPubkey {
     fn to_field_elements(&self) -> Option<Vec<F>> {
-        let mut buf: Vec<F> = Vec::new();
-        buf.extend_from_slice(&self.0.into_affine().to_field_elements().unwrap());
+        let mut vector: Vec<F> = Vec::new();
 
-        Some(buf)
+        vector.extend_from_slice(&self.0.into_affine().x.to_field_elements().unwrap());
+        vector.extend_from_slice(&self.0.into_affine().y.to_field_elements().unwrap());
+
+        Some(vector)
     }
 }
 
