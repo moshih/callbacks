@@ -5,7 +5,7 @@ use crate::{
         callbacks::CallbackCom,
         object::{Com, Nul, Time, TimeVar},
         service::ServiceProvider,
-        user::UserData,
+        user::{ExecutedMethod, UserData},
     },
     impls::{
         centralized::{
@@ -29,6 +29,7 @@ use ark_r1cs_std::{
     alloc::AllocVar, convert::ToConstraintFieldGadget, fields::fp::FpVar, prelude::Boolean,
 };
 use ark_relations::r1cs::SynthesisError;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rand::{
     distributions::{Distribution, Standard},
     thread_rng, CryptoRng, Rng, RngCore,
@@ -759,15 +760,12 @@ pub struct CentralStore<
     pub interaction_ids: Vec<u64>,
     /// A list of tickets which have not yet been called but handed to the service, each associated
     /// to the interaction id at the same index.
-    pub cb_tickets: Vec<Vec<(CallbackCom<F, F, NoSigOTP<F>>, F)>>,
+    // pub cb_tickets: Vec<Vec<(CallbackCom<F, F, NoSigOTP<F>>, F)>>,
+    pub cb_tickets: Vec<Vec<Vec<u8>>>,
 }
 
-impl<
-        F: PrimeField + Absorb,
-        S: Signature<F>,
-        B: NonmembStore<F>,
-        A: Clone + ToConstraintField<F>,
-    > ServiceProvider<F, F, NoSigOTP<F>> for CentralStore<F, S, B, A>
+impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> ServiceProvider<F, F, NoSigOTP<F>>
+    for CentralStore<F, S, B, F>
 where
     Standard: Distribution<F>,
 {
@@ -776,7 +774,9 @@ where
 
     fn has_never_received_tik(&self, tik: FakeSigPubkey<F>) -> bool {
         for j in &self.cb_tickets {
-            for (a, _) in j {
+            for k in j {
+                let (a, _) =
+                    <(CallbackCom<F, F, NoSigOTP<F>>, F)>::deserialize_compressed(&**k).unwrap();
                 if a.cb_entry.tik == tik {
                     return false;
                 }
@@ -791,7 +791,63 @@ where
         data: u64,
     ) -> Result<(), Self::Error> {
         self.interaction_ids.push(data);
-        self.cb_tickets.push(interaction.cb_tik_list.to_vec());
+        let tiks = interaction.cb_tik_list.to_vec();
+        let mut v = vec![];
+        for tik in tiks {
+            let mut ser = vec![];
+            tik.serialize_compressed(&mut ser).map_err(|_| ())?;
+            v.push(ser);
+        }
+
+        self.cb_tickets.push(v);
+
+        Ok(())
+    }
+}
+
+impl<
+        F: PrimeField + Absorb,
+        S: Signature<F>,
+        B: NonmembStore<F>,
+        A: Clone + ToConstraintField<F> + Default,
+        AVar: AllocVar<A, F> + Clone,
+    > ServiceProvider<F, A, NoEnc<F, A, AVar>> for CentralStore<F, S, B, A>
+where
+    Standard: Distribution<F>,
+{
+    type Error = ();
+    type InteractionData = u64;
+
+    fn has_never_received_tik(&self, tik: FakeSigPubkey<F>) -> bool {
+        for j in &self.cb_tickets {
+            for k in j {
+                let (a, _) =
+                    <(CallbackCom<F, A, NoEnc<F, A, AVar>>, F)>::deserialize_compressed(&**k)
+                        .unwrap();
+                if a.cb_entry.tik == tik {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn store_interaction<U: UserData<F>, Snark: ark_snark::SNARK<F>, const NUMCBS: usize>(
+        &mut self,
+        interaction: ExecutedMethod<F, Snark, A, NoEnc<F, A, AVar>, NUMCBS>,
+        data: u64,
+    ) -> Result<(), Self::Error> {
+        self.interaction_ids.push(data);
+        let tiks = interaction.cb_tik_list.to_vec();
+        let mut v = vec![];
+        for tik in tiks {
+            let mut ser = vec![];
+            tik.serialize_compressed(&mut ser).map_err(|_| ())?;
+            v.push(ser);
+        }
+
+        self.cb_tickets.push(v);
+
         Ok(())
     }
 }
