@@ -11,8 +11,8 @@ use crate::{
     },
 };
 use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
-use ark_ff::{AdditiveGroup, BigInteger, PrimeField, ToConstraintField, UniformRand};
-use ark_grumpkin::{constraints::GVar, Affine as GA, Fq, Fr as F, Projective as G};
+use ark_ff::{BigInteger, PrimeField, ToConstraintField, UniformRand};
+use ark_grumpkin::{constraints::GVar, Fq, Fr as F, Projective as G};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     boolean::Boolean,
