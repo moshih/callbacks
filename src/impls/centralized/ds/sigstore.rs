@@ -805,6 +805,42 @@ where
     }
 }
 
+impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> CentralStore<F, S, B, F>
+where
+    Standard: Distribution<F>,
+{
+    /// Get a callback ticket (and signature randomness) so the service provider may call the
+    /// callback. This gets the ticket from the index in the list. For each interaction, the set of
+    /// callbacks is appended to the list.
+    ///
+    ///- `index` dictates which interaction.
+    ///- `which` dictates which callback for that interaction.
+    pub fn get_ticket_ind(
+        &self,
+        index: usize,
+        which: usize,
+    ) -> (CallbackCom<F, F, NoSigOTP<F>>, F) {
+        <(CallbackCom<F, F, NoSigOTP<F>>, F)>::deserialize_compressed(
+            &*self.cb_tickets[index][which],
+        )
+        .unwrap()
+    }
+
+    /// Get a callback ticket (and signature randomness) so the service provider may call the
+    /// callback. This gets the ticket by the interaction id. Each interaction is associated with
+    /// an interaction id, which should be unique. This function is guaranteed to return a proper
+    /// and correct ticket if all ids are unique and the id is within this list. If the id
+    /// is not in the list, this function panics.
+    pub fn get_ticket_id(&self, id: u64, which: usize) -> (CallbackCom<F, F, NoSigOTP<F>>, F) {
+        for i in 0..self.interaction_ids.len() {
+            if self.interaction_ids[i] == id {
+                return self.get_ticket_ind(i, which);
+            }
+        }
+        panic!("No interaction found.");
+    }
+}
+
 impl<
         F: PrimeField + Absorb,
         S: Signature<F>,
@@ -852,6 +888,50 @@ where
     }
 }
 
+impl<
+        F: PrimeField + Absorb,
+        S: Signature<F>,
+        B: NonmembStore<F>,
+        A: Clone + ToConstraintField<F> + Default,
+    > CentralStore<F, S, B, A>
+where
+    Standard: Distribution<F>,
+{
+    /// Get a callback ticket (and signature randomness) so the service provider may call the
+    /// callback. This gets the ticket from the index in the list. For each interaction, the set of
+    /// callbacks is appended to the list.
+    ///
+    ///- `index` dictates which interaction.
+    ///- `which` dictates which callback for that interaction.
+    pub fn get_ticket_ind_noenc<AVar: AllocVar<A, F> + Clone>(
+        &self,
+        index: usize,
+        which: usize,
+    ) -> (CallbackCom<F, A, NoEnc<F, A, AVar>>, F) {
+        <(CallbackCom<F, A, NoEnc<F, A, AVar>>, F)>::deserialize_compressed(
+            &*self.cb_tickets[index][which],
+        )
+        .unwrap()
+    }
+
+    /// Get a callback ticket (and signature randomness) so the service provider may call the
+    /// callback. This gets the ticket by the interaction id. Each interaction is associated with
+    /// an interaction id, which should be unique. This function is guaranteed to return a proper
+    /// and correct ticket if all ids are unique and the id is within this list. If the id
+    /// is not in the list, this function panics.
+    pub fn get_ticket_id_noenc<AVar: AllocVar<A, F> + Clone>(
+        &self,
+        id: u64,
+        which: usize,
+    ) -> (CallbackCom<F, A, NoEnc<F, A, AVar>>, F) {
+        for i in 0..self.interaction_ids.len() {
+            if self.interaction_ids[i] == id {
+                return self.get_ticket_ind_noenc(i, which);
+            }
+        }
+        panic!("No interaction found.");
+    }
+}
 impl<
         F: PrimeField + Absorb,
         S: Signature<F>,

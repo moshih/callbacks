@@ -57,6 +57,8 @@ use crate::generic::interaction::Interaction;
 /// #     },
 /// #     scannable_zk_object,
 /// # };
+/// type PubScan = PubScanArgs<Fr, Data, Fr, FpVar<Fr>, NoSigOTP<Fr>, UOVCallbackStore<Fr, Fr>, 1>;
+///
 /// #[scannable_zk_object(Fr)]
 /// #[derive(Default)]
 /// pub struct Data {
@@ -85,11 +87,11 @@ use crate::generic::interaction::Interaction;
 ///         predicate: cb_enforce,
 ///     };
 ///
-///     let mut store = UOVStore::new(&mut rng);
+///     let mut store = <UOVStore<Fr, Fr>>::new(&mut rng);
 ///
 ///     let cb_methods = vec![cb.clone()];
 ///
-///     let pub_scan_args = PubScanArgs {
+///     let pub_scan_args: PubScan = PubScanArgs {
 ///         memb_pub: [store.callback_bul.get_pubkey(); 1],
 ///         is_memb_data_const: true,
 ///         nmemb_pub: [store.callback_bul.nmemb_bul.get_pubkey(); 1],
@@ -336,7 +338,7 @@ impl<
 /// # use crate::zk_callbacks::generic::bulletin::PublicCallbackBul;
 /// # use zk_callbacks::impls::centralized::ds::sigstore::{UOVCallbackStore, UOVStore};
 /// # type Groth = Groth16<E>;
-/// type PubScan = PubScanArgs<Fr, Data, Fr, FpVar<Fr>, NoSigOTP<Fr>, UOVCallbackStore<Fr>, 1>;
+/// type PubScan = PubScanArgs<Fr, Data, Fr, FpVar<Fr>, NoSigOTP<Fr>, UOVCallbackStore<Fr, Fr>, 1>;
 ///
 /// #[scannable_zk_object(Fr)]
 /// #[derive(Default)]
@@ -397,7 +399,7 @@ impl<
 ///
 ///     let cb_methods = vec![cb.clone()];
 ///
-///     let mut store = UOVStore::new(&mut rng);
+///     let mut store = <UOVStore<Fr, Fr>>::new(&mut rng);
 ///
 ///     let int = Interaction {
 ///         meth: (method, predicate),
@@ -425,10 +427,12 @@ impl<
 ///     let cb = u.get_cb::<Fr, NoSigOTP<Fr>>(0);
 ///     let tik: FakeSigPubkey<Fr> = cb.get_ticket();
 ///
-///     let prs: PrivScanArgs<Fr, Fr, NoSigOTP<Fr>, UOVCallbackStore<Fr>, 1> = PrivScanArgs {
+///     let x = <UOVCallbackStore<Fr, Fr> as PublicCallbackBul<Fr, Fr, NoSigOTP<Fr>>>::verify_in(&store.callback_bul, tik.clone());
+///
+///     let prs: PrivScanArgs<Fr, Fr, NoSigOTP<Fr>, UOVCallbackStore<Fr, Fr>, 1> = PrivScanArgs {
 ///         priv_n_tickets: [cb],
-///         post_times: [store.callback_bul.verify_in(tik.clone()).map_or(Fr::from(0), |(_, p2)| p2)],
-///         enc_args: [store.callback_bul.verify_in(tik.clone()).map_or(Fr::from(0), |(p1, _)| p1)],
+///         post_times: [x.map_or(Fr::from(0), |(_, p2)| p2)],
+///         enc_args: [x.map_or(Fr::from(0), |(p1, _)| p1)],
 ///         memb_priv: [store.callback_bul.get_memb_witness(&tik).unwrap_or_default()],
 ///         nmemb_priv: [store.callback_bul.get_nmemb_witness(&tik).unwrap_or_default()],
 ///     };

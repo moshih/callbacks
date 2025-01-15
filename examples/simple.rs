@@ -519,7 +519,7 @@ fn main() {
 
     let called = store
         .call(
-            store.cb_tickets[1][0].0.clone(),
+            store.get_ticket_ind(1, 0).0,
             F::from(41),
             FakeSigPrivkey::sk(),
         )
@@ -540,18 +540,6 @@ fn main() {
     // Setup a scan for the second callback
 
     let start = SystemTime::now();
-
-    let (_, test_cs) = u
-        .constraint_scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, JJSchnorrObjStore, 1>(
-            &mut rng,
-            &store.obj_bul,
-            true,
-            &store.callback_bul,
-            (true, true),
-            store.callback_bul.get_epoch(),
-            cb_methods.clone(),
-        )
-        .unwrap();
 
     let (ps, scan_second) = u
         .scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, JJSchnorrCallbackStore<F>, Groth16<E>, JJSchnorrObjStore, 1>(

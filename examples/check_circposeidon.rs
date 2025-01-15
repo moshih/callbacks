@@ -6,8 +6,8 @@ use zk_callbacks::{
         user::{User, UserData},
     },
     impls::hash::CircPoseidon,
+    zk_object,
 };
-use zk_object::zk_object;
 
 #[zk_object(F)]
 #[derive(Default)]
