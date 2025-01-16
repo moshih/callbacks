@@ -313,6 +313,9 @@ where
         tik: &FakeSigPubkey<F>,
     ) -> Option<(Self::NonMembershipPub, Self::NonMembershipWitness)>;
 
+    /// Get the nonmembership public data.
+    fn get_nmemb_pub(&self) -> Self::NonMembershipPub;
+
     /// Return true if the ticket is a non-member, and false if the ticket is a member.
     fn verify_not_in(&self, tik: FakeSigPubkey<F>) -> bool;
 
@@ -541,7 +544,7 @@ where
             None => (
                 self.get_pubkey(),
                 self.get_memb_witness(&tik).unwrap(),
-                B::NonMembershipPub::default(),
+                self.nmemb_bul.get_nmemb_pub(),
                 B::NonMembershipWitness::default(),
             ),
         }

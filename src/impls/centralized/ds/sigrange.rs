@@ -375,4 +375,8 @@ where
 
         Ok(range_correct & c2)
     }
+
+    fn get_nmemb_pub(&self) -> Self::NonMembershipPub {
+        self.get_pubkey()
+    }
 }

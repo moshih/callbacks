@@ -615,6 +615,8 @@ pub fn scan_method<
         out_user.in_progress_cbs = out_user.callbacks.clone();
     }
 
+    let mut marked_for_deletion = vec![];
+
     for i in priv_args.priv_n_tickets {
         out_user.zk_fields.old_in_progress_callback_hash = add_ticket_to_hc::<F, H, CBArgs, Crypto>(
             out_user.zk_fields.old_in_progress_callback_hash,
@@ -637,7 +639,7 @@ pub fn scan_method<
                 i.clone().serialize_compressed(&mut cb).unwrap();
                 for x in 0..out_user.in_progress_cbs.len() {
                     if out_user.in_progress_cbs[x] == cb {
-                        out_user.in_progress_cbs.remove(x);
+                        marked_for_deletion.push(x);
                     }
                 }
             }
@@ -648,7 +650,7 @@ pub fn scan_method<
                     i.clone().serialize_compressed(&mut cb).unwrap();
                     for x in 0..out_user.in_progress_cbs.len() {
                         if out_user.in_progress_cbs[x] == cb {
-                            out_user.in_progress_cbs.remove(x);
+                            marked_for_deletion.push(x);
                         }
                     }
                 } else {
@@ -663,6 +665,15 @@ pub fn scan_method<
 
         out_user.scan_index = Some(out_user.scan_index.unwrap() + 1);
     }
+
+    let mut new_ipc = vec![];
+    for i in 0..out_user.in_progress_cbs.len() {
+        if !marked_for_deletion.contains(&i) {
+            new_ipc.push(out_user.in_progress_cbs[i].clone());
+        }
+    }
+
+    out_user.in_progress_cbs = new_ipc;
 
     if out_user.zk_fields.old_in_progress_callback_hash == out_user.zk_fields.callback_hash {
         out_user.zk_fields.callback_hash = out_user.zk_fields.new_in_progress_callback_hash;

@@ -1380,6 +1380,8 @@ where
     >
     where
         U::UserDataVar: CondSelectGadget<F> + EqGadget<F>,
+        CBul::MembershipPub: std::fmt::Debug,
+        CBul::NonMembershipPub: std::fmt::Debug,
     {
         let start_ind = match self.scan_index {
             Some(ind) => {

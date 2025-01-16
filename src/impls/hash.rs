@@ -41,6 +41,32 @@ impl<F: PrimeField + Absorb, const R: usize> HasherZK<F> for Poseidon<R> {
 
 impl<F: PrimeField + Absorb, const R: usize> FieldHash<F> for Poseidon<R> {}
 
+/// A constant hash.
+///
+/// Hashes to a constant value. This is not a proper hash, this is only meant for testing.
+#[derive(Clone, Default, Debug)]
+pub struct ConstHash;
+
+impl<F: PrimeField + Absorb> HasherZK<F> for ConstHash {
+    type M = F;
+
+    type C = F;
+
+    type MV = FpVar<F>;
+
+    type CV = FpVar<F>;
+
+    fn hash(_data: &[Self::M]) -> Self::C {
+        F::ZERO
+    }
+
+    fn hash_in_zk(_data: &[Self::MV]) -> Result<Self::CV, SynthesisError> {
+        Ok(FpVar::Constant(F::ZERO))
+    }
+}
+
+impl<F: PrimeField + Absorb> FieldHash<F> for ConstHash {}
+
 /// A poseidon hash which works with Circom.
 ///
 /// Note that this hash still doesn't natively work with Circom; a specialized `ArkPoseidon` must

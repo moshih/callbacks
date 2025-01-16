@@ -521,7 +521,9 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
             pub_inputs.extend::<Vec<F>>(a.to_field_elements().unwrap());
         }
 
-        Snark::verify(verif_key, &pub_inputs, &proof).unwrap_or(false)
+        let out = Snark::verify(verif_key, &pub_inputs, &proof);
+
+        out.unwrap_or(false)
     }
 
     /// Verifies a user's interaction and appends the new object to the bulletin.

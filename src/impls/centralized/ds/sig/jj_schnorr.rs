@@ -298,6 +298,11 @@ impl AllocVar<JJSchnorrPubkey, F> for JJSchnorrPubkeyVar {
 
         res.and_then(|pk| {
             let pk = pk.borrow();
+
+            if mode == AllocationMode::Constant {
+                return Ok(Self(JubjubVar::new_constant(cs.clone(), pk.0)?));
+            }
+
             let aff_pk = pk.0.into_affine();
 
             let jj_v = <JubjubVar as AllocVar<Affine<JubjubConfig>, _>>::new_variable(
@@ -378,7 +383,7 @@ impl CondSelectGadget<BlsFr> for JJSchnorrPubkeyVar {
 }
 
 /// The Schnorr signature scheme, on the BLS curve. Implements [`Signature`].
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct JubjubSchnorr;
 
 impl Signature<F> for JubjubSchnorr {
