@@ -17,19 +17,12 @@ use zk_callbacks::{
     impls::{
         centralized::{
             crypto::{FakeSigPrivkey, FakeSigPubkey, NoSigOTP},
-            ds::sigstore::{
-                GRSchnorrCallbackStore, GRSchnorrObjStore, GRSchnorrStore, JJSchnorrCallbackStore,
-                JJSchnorrObjStore, JJSchnorrStore, UOVCallbackStore, UOVObjStore, UOVStore,
-            },
+            ds::sigstore::{GRSchnorrCallbackStore, GRSchnorrObjStore, GRSchnorrStore},
         },
         hash::Poseidon,
     },
     scannable_zk_object,
 };
-
-type PepegaSchnorrObjStore = UOVObjStore<F>;
-type PepegaSchnorrStore<A> = UOVStore<F, A>;
-type PepegaSchnorrCallbackStore<A> = UOVCallbackStore<F, A>;
 
 // Initialize a zk-object!
 
