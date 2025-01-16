@@ -529,7 +529,8 @@ where
     }
 }
 
-pub(crate) struct ExecMethodCircuit<
+/// The circuit used to generating proofs of an executed method. This is not necessary for use with the base system.
+pub struct ExecMethodCircuit<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
     U: UserData<F>,
@@ -544,23 +545,37 @@ pub(crate) struct ExecMethodCircuit<
     const NUMCBS: usize,
 > {
     // Private Inputs
+    /// The old user object.
     pub priv_old_user: User<F, U>,
+    /// The new user object.
     pub priv_new_user: User<F, U>,
+    /// The issued callback tickets.
     pub priv_issued_callbacks: [CallbackCom<F, CBArgs, Crypto>; NUMCBS],
+    /// The membership witness for the old object.
     pub priv_bul_membership_witness: Bul::MembershipWitness,
+    /// Private arguments to the associated method.
     pub priv_args: PrivArgs,
 
     // Public Inputs
+    /// The commitment to the new object.
     pub pub_new_com: Com<F>,
+    /// The nullifier of the old object.
     pub pub_old_nul: Nul<F>,
+    /// Commitments to the callback tickets.
     pub pub_issued_callback_coms: [Com<F>; NUMCBS],
+    /// Public arguments to the associated method.
     pub pub_args: PubArgs,
+    /// Public membership data for the old object.
     pub pub_bul_membership_data: Bul::MembershipPub,
+    /// If the public membership data is constant.
     pub bul_memb_is_const: bool,
 
+    /// The method.
     pub associated_method:
         Interaction<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, NUMCBS>,
+    /// If this circuit should remove checks for not scanning.
     pub is_scan: bool,
+    /// The hash used for commitments.
     pub _phantom_hash: PhantomData<H>,
 }
 
@@ -828,7 +843,8 @@ where
 }
 
 #[derive(Clone)]
-pub(crate) struct ProvePredicateCircuit<
+/// The circuit used to generating proofs of some predicate. This is not necessary for use with the base system.
+pub struct ProvePredicateCircuit<
     F: PrimeField + Absorb,
     U: UserData<F>,
     PubArgs: Clone,
@@ -837,13 +853,18 @@ pub(crate) struct ProvePredicateCircuit<
     PrivArgsVar: AllocVar<PrivArgs, F>,
 > {
     // Private
+    /// The private user object.
     pub priv_user: User<F, U>,
+    /// Private predicate arguments.
     pub priv_args: PrivArgs,
 
     // Public
+    /// The commitment to the user object. Note that this is public.
     pub pub_com: Com<F>,
+    /// The public arguments to the predicate.
     pub pub_args: PubArgs,
 
+    /// The predicate.
     pub associated_method: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
 }
 
@@ -968,7 +989,8 @@ where
     Snark::circuit_specific_setup(out, rng).unwrap()
 }
 
-pub(crate) struct ProvePredInCircuit<
+/// The circuit used to generating proofs of some predicate and membership. This is not necessary for use with the base system.
+pub struct ProvePredInCircuit<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
     U: UserData<F>,
@@ -979,16 +1001,24 @@ pub(crate) struct ProvePredInCircuit<
     Bul: PublicUserBul<F, U>,
 > {
     // Private
+    /// The private user object.
     pub priv_user: User<F, U>,
+    /// Membership witness for the user commitment.
     pub priv_extra_membership_data: Bul::MembershipWitness,
+    /// Private arguments to the predicate.
     pub priv_args: PrivArgs,
 
     // Public
+    /// Public arguments to the predicate.
     pub pub_args: PubArgs,
+    /// Public membership data for the user commitment.
     pub pub_extra_membership_data: Bul::MembershipPub,
+    /// If the public membership data constant.
     pub bul_memb_is_const: bool,
+    /// The predicate.
     pub associated_method: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
 
+    /// The hash used for the commitment.
     pub _phantom_hash: PhantomData<H>,
 }
 

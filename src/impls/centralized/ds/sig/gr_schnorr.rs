@@ -290,14 +290,7 @@ impl AllocVar<GRSchnorrPubkey, Fq> for GRSchnorrPubkeyVar {
 
         res.and_then(|pk| {
             let pk = pk.borrow();
-            let x = <FpVar<Fq>>::new_variable(ns!(cs, "entry_x"), || Ok(pk.0.x), mode)?;
-
-            let y = <FpVar<Fq>>::new_variable(ns!(cs, "entry_y"), || Ok(pk.0.y), mode)?;
-
-            let z = <FpVar<Fq>>::new_variable(ns!(cs, "entry_z"), || Ok(pk.0.z), mode)?;
-
-            let jj_v = GVar::new(x, y, z);
-            // let jj_v = GVar::new_variable(ns!(cs, "entry"), || Ok(pk.0), mode)?;
+            let jj_v = GVar::new_variable(ns!(cs, "entry"), || Ok(pk.0), mode)?;
 
             Ok(Self(jj_v))
         })

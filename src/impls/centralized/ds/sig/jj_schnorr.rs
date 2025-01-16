@@ -401,6 +401,7 @@ mod test {
 
     use ark_ff::UniformRand;
     use ark_relations::r1cs::ConstraintSystem;
+    use groth16::Groth16;
     use rand::thread_rng;
 
     // Just checks that Schnorr signing doesn't panic
