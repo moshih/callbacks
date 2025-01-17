@@ -65,7 +65,7 @@ pub struct GRSchnorrPubkeyVar(GVar);
 // }
 
 /// A Grumpkin BN254 Schnorr signature.
-#[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct GRSchnorrSignature {
     /// Challenge
     e: F,

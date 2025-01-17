@@ -21,7 +21,7 @@ use rand::{distributions::Standard, prelude::Distribution, Rng};
 use crate::generic::fold::FoldSer;
 
 /// A UOV signature.
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct UOVSig<F: PrimeField, const N: usize, const M: usize> {
     preimage: Vec<F>,
     n: PhantomData<[(); N]>,

@@ -72,7 +72,7 @@ impl Default for JJSchnorrPubkeyVar {
 }
 
 /// A Jubjub BLS Schnorr signature.
-#[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, Default, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct JJSchnorrSignature {
     /// Challenge
     e: JubjubFr,
