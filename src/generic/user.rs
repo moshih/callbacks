@@ -585,13 +585,10 @@ where
 
     /// Gets the arguments for a scan.
     pub fn get_scan_arguments<
-        H: FieldHash<F>,
         CBArgs: Clone + std::fmt::Debug + PartialEq + Eq,
         CBArgsVar: AllocVar<CBArgs, F> + Clone,
         Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar> + PartialEq + Eq,
         CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
-        Snark: SNARK<F, Error = SynthesisError>,
-        Bul: PublicUserBul<F, U>,
         const NUMSCANS: usize,
     >(
         &mut self,
