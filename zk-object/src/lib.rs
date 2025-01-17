@@ -110,17 +110,17 @@ fn derive_userdata_and_zk(
                 )
             }
             Fields::Unnamed(_) => {
-                todo!()
+                todo!() // TODO: macro for tuple struct
             }
             Fields::Unit => {
-                todo!()
+                todo!() // TODO: macro for unit type
             }
         },
         Data::Enum(_) => {
-            todo!()
+            todo!() // TODO: macro for enum type
         }
         Data::Union(_) => {
-            todo!()
+            todo!() // TODO: macro for union type
         }
     }
 }

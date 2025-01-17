@@ -315,6 +315,15 @@ impl<F: PrimeField + Absorb, U: UserData<F>> std::fmt::Octal for User<F, U> {
     }
 }
 
+impl<F: PrimeField + Absorb, U: UserData<F>> std::fmt::Display for User<F, U>
+where
+    U: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.data,)
+    }
+}
+
 /// In-circuit representation of the user object.
 ///
 /// Consists of both user data in circuit, along with the extra zero knowledge fields.

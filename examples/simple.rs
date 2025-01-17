@@ -118,14 +118,14 @@ fn some_pred<'a, 'b>(
 // `args`.
 fn cb_meth<'a>(tu: &'a U, args: F) -> U {
     let mut out = tu.clone();
-    out.data.token1 = args;
+    out.data.token2 = tu.data.token2 + args;
     out
 }
 
 // The proof that enforces the callback that the server calls.
 fn cb_pred<'a>(tu_old: &'a UV, args: FpVar<F>) -> ArkResult<UV> {
     let mut tu_new = tu_old.clone();
-    tu_new.data.token1 = args;
+    tu_new.data.token2 = tu_new.data.token2 + args;
     Ok(tu_new)
 }
 
@@ -201,13 +201,13 @@ fn main() {
         );
 
     // generate keys for the callback scan
-    let (pks, vks) = get_scan_interaction::<_, _, _, _, _, _, Poseidon<2>, 1>()
+    let (pks, vks) = get_scan_interaction::<_, _, _, _, _, _, Poseidon<2>, NUMSCANS>()
         .generate_keys::<Poseidon<2>, Groth16<E>, Cr, GRSchnorrObjStore>(
-            &mut rng,
-            Some(store.obj_bul.get_pubkey()),
-            Some(ex),
-            true,
-        );
+        &mut rng,
+        Some(store.obj_bul.get_pubkey()),
+        Some(ex),
+        true,
+    );
 
     // generate keys for the arbitrary predicate
     let (pki, vki) = generate_keys_for_statement_in::<
@@ -464,7 +464,7 @@ fn main() {
 
     let start = SystemTime::now();
 
-    let (ps, scan_one) = u.scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, GRSchnorrCallbackStore<F>, Groth16<E>, GRSchnorrObjStore, 1>
+    let (ps, scan_one) = u.scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, GRSchnorrCallbackStore<F>, Groth16<E>, GRSchnorrObjStore, NUMSCANS>
         (&mut rng,
             &store.obj_bul,
             true,
@@ -561,7 +561,7 @@ fn main() {
     let start = SystemTime::now();
 
     let (ps, scan_second) = u
-        .scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, GRSchnorrCallbackStore<F>, Groth16<E>, GRSchnorrObjStore, 1>(
+        .scan_callbacks::<Poseidon<2>, F, FpVar<F>, Cr, GRSchnorrCallbackStore<F>, Groth16<E>, GRSchnorrObjStore, NUMSCANS>(
             &mut rng,
             &store.obj_bul,
             true,
@@ -625,5 +625,5 @@ fn main() {
         res
     );
 
-    // println!("User at the end : {:?}", u);
+    println!("{}", u);
 }
