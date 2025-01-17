@@ -583,6 +583,93 @@ where
         self.scan_index.is_some()
     }
 
+    /// Gets the arguments for a scan.
+    pub fn get_scan_arguments<
+        H: FieldHash<F>,
+        CBArgs: Clone + std::fmt::Debug + PartialEq + Eq,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar> + PartialEq + Eq,
+        CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
+        Snark: SNARK<F, Error = SynthesisError>,
+        Bul: PublicUserBul<F, U>,
+        const NUMSCANS: usize,
+    >(
+        &mut self,
+        cbul: &CBul,
+        is_memb_nmemb_const: (bool, bool),
+        cur_time: Time<F>,
+        cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
+    ) -> (
+        PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+        PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>,
+    ) {
+        let start_ind = match self.scan_index {
+            Some(ind) => {
+                assert!(NUMSCANS + ind <= self.callbacks.len());
+                ind
+            }
+            None => {
+                assert!(NUMSCANS <= self.callbacks.len());
+                0
+            }
+        };
+
+        let mut vec_cbs = vec![];
+        let mut vec_memb_pub = vec![];
+        let mut vec_nmemb_pub = vec![];
+        let mut vec_memb_priv = vec![];
+        let mut vec_nmemb_priv = vec![];
+        let mut vec_enc = vec![];
+        let mut vec_times = vec![];
+
+        for i in 0..NUMSCANS {
+            let cb: CallbackCom<F, CBArgs, Crypto> = self.get_cb::<CBArgs, Crypto>(start_ind + i);
+            let data = cbul.get_membership_data(cb.get_ticket());
+            let if_in = cbul.verify_in(cb.get_ticket());
+            let (enc, time) = match if_in {
+                Some((e, t)) => (e, t),
+                None => (Crypto::Ct::default(), Time::default()),
+            };
+            vec_enc.push(enc);
+            vec_times.push(time);
+            vec_cbs.push(cb);
+            vec_memb_pub.push(data.0);
+            vec_memb_priv.push(data.1);
+            vec_nmemb_pub.push(data.2);
+            vec_nmemb_priv.push(data.3);
+        }
+
+        let ps: PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS> = PubScanArgs {
+            memb_pub: vec_memb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_pub: vec_nmemb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            bulletin: cbul.clone(),
+            is_memb_data_const: is_memb_nmemb_const.0,
+            is_nmemb_data_const: is_memb_nmemb_const.1,
+            cur_time,
+            cb_methods,
+        };
+
+        let prs: PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS> = PrivScanArgs {
+            priv_n_tickets: vec_cbs.try_into().unwrap(),
+            post_times: vec_times.try_into().unwrap(),
+            enc_args: vec_enc
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            memb_priv: vec_memb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_priv: vec_nmemb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+        };
+
+        (ps, prs)
+    }
+
     /// Execute a method, add on callbacks, and produce a proof to a server.
     ///
     /// # Note
