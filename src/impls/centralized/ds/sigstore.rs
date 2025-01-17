@@ -767,8 +767,8 @@ pub struct CentralStore<
     pub cb_tickets: Vec<Vec<Vec<u8>>>,
 }
 
-impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>> ServiceProvider<F, F, NoSigOTP<F>>
-    for CentralStore<F, S, B, F>
+impl<F: PrimeField + Absorb, S: Signature<F>, B: NonmembStore<F>>
+    ServiceProvider<F, F, FpVar<F>, NoSigOTP<F>> for CentralStore<F, S, B, F>
 where
     Standard: Distribution<F>,
 {
@@ -850,7 +850,7 @@ impl<
         B: NonmembStore<F>,
         A: Clone + ToConstraintField<F> + Default,
         AVar: AllocVar<A, F> + Clone,
-    > ServiceProvider<F, A, NoEnc<F, A, AVar>> for CentralStore<F, S, B, A>
+    > ServiceProvider<F, A, AVar, NoEnc<F, A, AVar>> for CentralStore<F, S, B, A>
 where
     Standard: Distribution<F>,
 {

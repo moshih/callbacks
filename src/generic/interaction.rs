@@ -490,7 +490,8 @@ where
     ) -> (Snark::ProvingKey, Snark::VerifyingKey) {
         let u = User::create(U::default(), rng);
 
-        let cbs: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] = create_defaults((*self).clone());
+        let cbs: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] =
+            create_defaults((*self).clone(), <Time<F>>::default());
 
         let x = (*self).clone();
 

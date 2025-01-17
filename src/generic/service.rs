@@ -3,11 +3,14 @@ use crate::{
     generic::{
         bulletin::{BulError, PublicUserBul},
         callbacks::CallbackCom,
+        interaction::Callback,
+        object::Time,
         user::{ExecutedMethod, UserData},
     },
 };
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::{PrimeField, ToConstraintField};
+use ark_r1cs_std::alloc::AllocVar;
 use ark_snark::SNARK;
 
 /// A called callback.
@@ -60,6 +63,7 @@ pub type Called<F, A, Crypto> = (
 /// # use zk_callbacks::generic::user::ExecutedMethod;
 /// # use zk_callbacks::crypto::enc::AECipherSigZK;
 /// # use zk_callbacks::generic::callbacks::CallbackCom;
+/// # use ark_r1cs_std::fields::fp::FpVar;
 /// type CB = CallbackCom<Fr, Fr, NoSigOTP<Fr>>;
 /// type SigRand = <NoSigOTP<Fr> as AECipherSigZK<Fr, Fr>>::Rand;
 ///
@@ -68,7 +72,7 @@ pub type Called<F, A, Crypto> = (
 ///     pub cb_tickets: Vec<Vec<(CB, SigRand)>>,
 /// }
 ///
-/// impl ServiceProvider<Fr, Fr, NoSigOTP<Fr>> for AnonForum {
+/// impl ServiceProvider<Fr, Fr, FpVar<Fr>, NoSigOTP<Fr>> for AnonForum {
 ///     type Error = ();
 ///     type InteractionData = u64;
 ///
@@ -90,7 +94,13 @@ pub type Called<F, A, Crypto> = (
 ///     }
 /// }
 /// ```
-pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECipherSigZK<F, CBArgs>> {
+pub trait ServiceProvider<
+    F: PrimeField + Absorb,
+    CBArgs: Clone,
+    CBArgsVar: AllocVar<CBArgs, F>,
+    Crypto: AECipherSigZK<F, CBArgs>,
+>
+{
     /// An error type.
     type Error;
 
@@ -169,6 +179,8 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
         sk: Crypto::SigSK,
         args: PubArgs,
         bul: &Bul,
+        cb_list: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
+        cur_time: Time<F>,
         memb_data: Bul::MembershipPub,
         is_memb_data_const: bool,
         verif_key: &Snark::VerifyingKey,
@@ -188,6 +200,18 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
 
         for i in 0..NUMCBS {
             let cb = interaction_request.cb_tik_list[i].0.clone();
+
+            if cb.cb_entry.expirable != cb_list[i].expirable {
+                return false;
+            }
+
+            if cb.cb_entry.expiration != cb_list[i].expiration + cur_time {
+                return false;
+            }
+
+            if cb.cb_entry.cb_method_id != cb_list[i].method_id {
+                return false;
+            }
 
             let cb_com = interaction_request.cb_com_list[i].clone();
 
@@ -254,7 +278,7 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
     ///     pub cb_tickets: Vec<Vec<(CB, SigRand)>>,
     /// }
     ///
-    /// impl ServiceProvider<Fr, Fr, NoSigOTP<Fr>> for AnonForum {
+    /// impl ServiceProvider<Fr, Fr, FpVar<Fr>, NoSigOTP<Fr>> for AnonForum {
     ///     type Error = ();
     ///     type InteractionData = u64;
     ///
@@ -326,6 +350,8 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
     ///         cb_tickets: vec![],
     ///     };
     ///
+    ///     let cb_methods = vec![cb];
+    ///
     ///     let mut dummy = DummyStore;
     ///
     ///     let mut rng = thread_rng();
@@ -334,9 +360,9 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
     ///
     ///     let mut u = User::create(Data { karma: Fr::from(0), is_banned: false }, &mut rng);
     ///
-    ///     let exec_meth = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), ()).unwrap();
+    ///     let exec_meth = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], Time::from(0), &DummyStore, true, &pk, (), ()).unwrap();
     ///
-    ///     forum.approve_interaction_and_store::<Data, _, _, _, Poseidon<2>, 1>(exec_meth, FakeSigPrivkey::sk(), (), &dummy, (), true, &vk, 727).unwrap();
+    ///     forum.approve_interaction_and_store::<Data, _, _, _, Poseidon<2>, 1>(exec_meth, FakeSigPrivkey::sk(), (), &dummy, cb_methods, Time::from(0), (), true, &vk, 727).unwrap();
     ///
     /// }
     /// ```
@@ -353,6 +379,8 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
         sk: Crypto::SigSK,
         args: PubArgs,
         bul: &Bul,
+        cb_list: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
+        cur_time: Time<F>,
         memb_data: Bul::MembershipPub,
         is_memb_data_const: bool,
         verif_key: &Snark::VerifyingKey,
@@ -363,6 +391,8 @@ pub trait ServiceProvider<F: PrimeField + Absorb, CBArgs: Clone, Crypto: AECiphe
             sk,
             args,
             bul,
+            cb_list,
+            cur_time,
             memb_data,
             is_memb_data_const,
             verif_key,

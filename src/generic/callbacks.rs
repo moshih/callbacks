@@ -247,6 +247,7 @@ pub(crate) fn create_defaults<
         CBArgsVar,
         NUMCBS,
     >,
+    pub_cur_time: Time<F>,
 ) -> [CallbackCom<F, CBArgs, Crypto>; NUMCBS] {
     interaction
         .callbacks
@@ -260,7 +261,7 @@ pub(crate) fn create_defaults<
                 tik: ticket_value,
                 cb_method_id: cb.method_id,
                 expirable: cb.expirable,
-                expiration: cb.expiration,
+                expiration: cb.expiration + pub_cur_time,
                 enc_key,
             };
 
@@ -299,6 +300,7 @@ pub(crate) fn create_cbs_from_interaction<
         NUMCBS,
     >,
     rpk_identities: [Crypto::SigPK; NUMCBS],
+    cur_time: Time<F>,
 ) -> CBList<F, Crypto, CBArgs, NUMCBS>
 where
     Standard: Distribution<F>,
@@ -316,7 +318,7 @@ where
                 tik: ticket_value,
                 cb_method_id: cb.method_id,
                 expirable: cb.expirable,
-                expiration: cb.expiration,
+                expiration: cb.expiration + cur_time,
                 enc_key,
             };
 

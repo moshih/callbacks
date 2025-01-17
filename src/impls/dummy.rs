@@ -9,7 +9,7 @@ use crate::{
 };
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use ark_r1cs_std::prelude::Boolean;
+use ark_r1cs_std::{alloc::AllocVar, prelude::Boolean};
 use ark_relations::r1cs::SynthesisError;
 
 /// A dummy store. This is a testing object which implements all bulletins.
@@ -158,8 +158,12 @@ impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
     }
 }
 
-impl<F: PrimeField + Absorb, Args: Clone, Crypto: AECipherSigZK<F, Args>>
-    ServiceProvider<F, Args, Crypto> for DummyStore
+impl<
+        F: PrimeField + Absorb,
+        Args: Clone,
+        ArgsVar: AllocVar<Args, F>,
+        Crypto: AECipherSigZK<F, Args>,
+    > ServiceProvider<F, Args, ArgsVar, Crypto> for DummyStore
 {
     type Error = ();
     type InteractionData = ();

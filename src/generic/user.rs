@@ -401,6 +401,8 @@ pub struct ExecutedMethod<
     pub cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS],
     /// A list of commitments to the tickets added to the user.
     pub cb_com_list: [Com<F>; NUMCBS],
+    /// The current time. This should be validated.
+    pub cur_time: Time<F>,
     /// Proof of valid user object update.
     pub proof: Snark::Proof,
 }
@@ -542,7 +544,7 @@ where
     ///
     ///     // Execute the method, and append a single callback to the user callback list. This
     ///     // callback is a ticket associated to `cb`.
-    ///     let _ = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], &DummyStore, true, &pk, (), ()).unwrap();
+    ///     let _ = u.exec_method_create_cb::<Poseidon<2>, _, _, _, _, _, _, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], Time::from(0), &DummyStore, true, &pk, (), ()).unwrap();
     ///
     ///     // Get the first callback stored in the user.
     ///     let first_callback = u.get_cb
@@ -739,7 +741,7 @@ where
     ///
     ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
     ///
-    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false).unwrap();
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], Time::from(20), ((), ()), true, &pk, Time::from(20), (), false).unwrap();
     ///
     ///     // User has been updated according to the method
     ///     assert_eq!(u.data.num_visits, Fr::from(1));
@@ -776,6 +778,7 @@ where
             NUMCBS,
         >,
         rpks: [Crypto::SigPK; NUMCBS],
+        cur_time: Time<F>,
         bul_data: (Bul::MembershipPub, Bul::MembershipWitness),
         is_memb_data_const: bool,
         pk: &Snark::ProvingKey,
@@ -800,7 +803,7 @@ where
         new_user.zk_fields.com_rand = rng.gen();
 
         let cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS] =
-            create_cbs_from_interaction(rng, method.clone(), rpks);
+            create_cbs_from_interaction(rng, method.clone(), rpks, cur_time);
 
         let issued_callbacks: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] = cb_tik_list
             .iter()
@@ -886,6 +889,7 @@ where
             old_nullifier: out_nul,
             cb_tik_list,
             cb_com_list: issued_cb_coms,
+            cur_time,
             proof,
         })
     }
@@ -923,6 +927,7 @@ where
             NUMCBS,
         >,
         rpks: [Crypto::SigPK; NUMCBS],
+        cur_time: Time<F>,
         bul_data: (Bul::MembershipPub, Bul::MembershipWitness),
         is_memb_data_const: bool,
         pub_args: PubArgs,
@@ -946,7 +951,7 @@ where
         new_user.zk_fields.com_rand = rng.gen();
 
         let cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS] =
-            create_cbs_from_interaction(rng, method.clone(), rpks);
+            create_cbs_from_interaction(rng, method.clone(), rpks, cur_time);
 
         let issued_callbacks: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] = cb_tik_list
             .iter()
@@ -1101,6 +1106,7 @@ where
             NUMCBS,
         >,
         rpks: [Crypto::SigPK; NUMCBS],
+        cur_time: Time<F>,
         bul: &Bul,
         is_memb_data_const: bool,
         pk: &Snark::ProvingKey,
@@ -1115,6 +1121,7 @@ where
             rng,
             method,
             rpks,
+            cur_time,
             bul_data,
             is_memb_data_const,
             pk,
@@ -1157,6 +1164,7 @@ where
             NUMCBS,
         >,
         rpks: [Crypto::SigPK; NUMCBS],
+        cur_time: Time<F>,
         bul: &Bul,
         is_memb_data_const: bool,
         pub_args: PubArgs,
@@ -1170,6 +1178,7 @@ where
             rng,
             method,
             rpks,
+            cur_time,
             bul_data,
             is_memb_data_const,
             pub_args,
@@ -1345,7 +1354,7 @@ where
     ///
     ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
     ///
-    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false).unwrap();
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], Time::from(20), ((), ()), true, &pk, Time::from(20), (), false).unwrap();
     ///
     ///     let (ps, scan_meth) = u.scan_callbacks::<Poseidon<2>, Fr, FpVar<Fr>, NoSigOTP<Fr>, DummyStore, Groth, DummyStore, 1>(&mut rng, &DummyStore, true, &pks, &DummyStore, (true, true), Time::from(25), cb_methods.clone()).unwrap();
     ///
@@ -1453,6 +1462,7 @@ where
             rng,
             get_scan_interaction::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>(),
             [],
+            cur_time,
             bul_data,
             is_memb_data_const,
             pk,
@@ -1568,6 +1578,7 @@ where
             rng,
             get_scan_interaction::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>(),
             [],
+            cur_time,
             bul_data,
             is_memb_data_const,
             ps.clone(),

@@ -217,6 +217,7 @@ fn main() {
             &mut rng,
             interaction.clone(), // see interaction
             [FakeSigPubkey::pk()],
+            Time::from(0),
             &store.obj_bul,
             true,
             &pk,
@@ -244,6 +245,8 @@ fn main() {
             // proper tickets (here it doesn't matter)
             (),
             &store.obj_bul.clone(),
+            cb_methods.clone(),
+            Time::from(0),
             store.obj_bul.get_pubkey(),
             true,
             &vk,
@@ -255,6 +258,7 @@ fn main() {
             &mut rng,
             interaction.clone(),
             [FakeSigPubkey::pk()],
+            Time::from(0),
             &store.obj_bul,
             true,
             &pk,
@@ -281,6 +285,8 @@ fn main() {
             FakeSigPrivkey::sk(),
             (),
             &store.obj_bul.clone(),
+            cb_methods.clone(),
+            Time::from(0),
             store.obj_bul.get_pubkey(),
             true,
             &vk,

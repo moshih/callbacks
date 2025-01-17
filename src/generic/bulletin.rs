@@ -618,7 +618,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     ///
     ///     let mut u = User::create(Data { bad_rep: 0, num_visits: Fr::from(0), last_interacted_time: Time::from(0) }, &mut rng);
     ///
-    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], ((), ()), true, &pk, Time::from(20), (), false).unwrap();
+    ///     let exec_meth = u.interact::<Poseidon<2>, Time<Fr>, TimeVar<Fr>, (), (), Fr, FpVar<Fr>, NoSigOTP<Fr>, Groth, DummyStore, 1>(&mut rng, int.clone(), [FakeSigPubkey::pk()], Time::from(20), ((), ()), true, &pk, Time::from(20), (), false).unwrap();
     ///
     ///     let out = <DummyStore as UserBul<Fr, Data>>::verify_interact_and_append::<Time<Fr>, Groth, 1>(
     ///         &mut DummyStore,
