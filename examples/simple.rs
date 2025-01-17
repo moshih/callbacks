@@ -625,5 +625,5 @@ fn main() {
         res
     );
 
-    println!("{}", u);
+    println!("{:?}", u);
 }
