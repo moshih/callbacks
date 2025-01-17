@@ -381,6 +381,8 @@ impl Signature<Fq> for GrumpkinSchnorr {
     type Privkey = GRSchnorrPrivkey;
 }
 
+// TODO: FoldSer
+
 #[cfg(test)]
 mod test {
     use super::*;

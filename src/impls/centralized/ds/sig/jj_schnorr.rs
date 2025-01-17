@@ -400,6 +400,8 @@ impl Signature<F> for JubjubSchnorr {
     type Privkey = JJSchnorrPrivkey;
 }
 
+// TODO: FoldSer
+
 #[cfg(test)]
 mod test {
     use super::*;

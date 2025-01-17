@@ -35,6 +35,13 @@ pub struct SignedRange<F: PrimeField, S: Signature<F>> {
     pub sig: S::Sig,
 }
 
+impl<F: PrimeField, S: Signature<F>> SignedRange<F, S> {
+    /// Returns if an element is within a signed range.
+    pub fn is_in_range(&self, elem: F) -> bool {
+        self.range.0 <= elem && elem < self.range.1
+    }
+}
+
 /// The signed range and time in-circuit.
 #[derive(Clone)]
 pub struct SignedRangeVar<F: PrimeField, S: Signature<F>> {
