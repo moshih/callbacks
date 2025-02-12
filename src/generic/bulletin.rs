@@ -262,7 +262,7 @@ pub trait PublicUserBul<F: PrimeField + Absorb, U: UserData<F>> {
     /// However, for centralized scenarios (where there is a single server), it is often only
     /// necessary to post the object. The example illustrates a centralized setting above.
     #[allow(clippy::too_many_arguments)]
-    fn verify_in<PubArgs, Snark: SNARK<F>, const NUMCBS: usize>(
+    fn verify_in<PubArgs: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
         &self,
         object: Com<F>,
         old_nul: Nul<F>,
@@ -469,7 +469,7 @@ pub trait UserBul<F: PrimeField + Absorb, U: UserData<F>>: PublicUserBul<F, U> {
     ///- `verif_key`: The verification key to verify the proof (this should be the key generated
     ///from the interaction, which encodes the predicate circuit).
     #[allow(clippy::too_many_arguments)]
-    fn append_value<PubArgs, Snark: SNARK<F>, const NUMCBS: usize>(
+    fn append_value<PubArgs: ToConstraintField<F>, Snark: SNARK<F>, const NUMCBS: usize>(
         &mut self,
         object: Com<F>,
         old_nul: Nul<F>,

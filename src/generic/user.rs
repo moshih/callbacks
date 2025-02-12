@@ -987,6 +987,148 @@ where
         })
     }
 
+    /// Get the execute method circuit for an interaction.
+    ///
+    /// For advanced use only.
+    pub fn circuit_interact<
+        H: FieldHash<F>,
+        PubArgs: Clone + std::fmt::Debug,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone + std::fmt::Debug,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        CBArgs: Clone + std::fmt::Debug,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
+        Bul: PublicUserBul<F, U>,
+        const NUMCBS: usize,
+    >(
+        &self,
+        rng: &mut (impl CryptoRng + RngCore),
+        method: Interaction<
+            F,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            NUMCBS,
+        >,
+        rpks: [Crypto::SigPK; NUMCBS],
+        cur_time: Time<F>,
+        bul_data: (Bul::MembershipPub, Bul::MembershipWitness),
+        is_memb_data_const: bool,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+        is_scan: bool,
+    ) -> Result<
+        ExecMethodCircuit<
+            F,
+            H,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            Crypto,
+            Bul,
+            NUMCBS,
+        >,
+        SynthesisError,
+    > {
+        // Steps:
+        // a) update user/self [ old user ] --> method(user) [ new user ]
+        // b) update user's zk fields properly (new nul, new comrand, proper cblist, etc)
+        // c) generate proof of correctness for
+        //      - a) the user was properly updated via the predicate
+        //      - b) the zk statements (nul == old nul, proper cblist, etc)
+
+        // (A) update the user object
+        // Create the new zk_object from the method
+        let mut new_user = (method.meth.0)(self, pub_args.clone(), priv_args.clone());
+
+        // (B) update the new users zk fields properly
+
+        new_user.zk_fields.nul = rng.gen();
+        new_user.zk_fields.com_rand = rng.gen();
+
+        let cb_tik_list: [(CallbackCom<F, CBArgs, Crypto>, Crypto::Rand); NUMCBS] =
+            create_cbs_from_interaction(rng, method.clone(), rpks, cur_time);
+
+        let issued_callbacks: [CallbackCom<F, CBArgs, Crypto>; NUMCBS] = cb_tik_list
+            .iter()
+            .map(|(x, _)| x.clone())
+            .collect::<Vec<CallbackCom<F, CBArgs, Crypto>>>()
+            .try_into()
+            .unwrap();
+
+        let issued_cb_coms = cb_tik_list
+            .iter()
+            .map(|(x, _)| x.commit::<H>())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        for item in issued_callbacks.iter().take(NUMCBS) {
+            let mut cb = Vec::new();
+            item.clone().serialize_compressed(&mut cb).unwrap();
+            new_user.callbacks.push(cb);
+
+            new_user.zk_fields.callback_hash = add_ticket_to_hc::<F, H, CBArgs, Crypto>(
+                new_user.zk_fields.callback_hash,
+                item.clone().cb_entry,
+            );
+        }
+
+        if !is_scan {
+            new_user.zk_fields.old_in_progress_callback_hash = new_user.zk_fields.callback_hash;
+        }
+
+        // (C) Generate proof of correctness
+        // Extract the zk fields from the objects to do bookkeeping
+
+        let out_commit = new_user.commit::<H>();
+
+        let out_nul = self.zk_fields.nul;
+
+        let exec_method_circ: ExecMethodCircuit<
+            F,
+            H,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            Crypto,
+            Bul,
+            NUMCBS,
+        > = ExecMethodCircuit {
+            priv_old_user: self.clone(),
+            priv_new_user: new_user.clone(),
+            priv_issued_callbacks: issued_callbacks,
+            priv_bul_membership_witness: bul_data.1,
+            priv_args,
+
+            pub_new_com: out_commit,
+            pub_old_nul: out_nul,
+            pub_issued_callback_coms: issued_cb_coms,
+            pub_args,
+            pub_bul_membership_data: bul_data.0,
+            bul_memb_is_const: is_memb_data_const,
+
+            associated_method: method,
+            is_scan,
+            _phantom_hash: core::marker::PhantomData,
+        };
+
+        Ok(exec_method_circ)
+    }
+
     /// Get the constraint system for an interaction.
     ///
     /// Useful for debugging.
@@ -1268,6 +1410,74 @@ where
         let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
 
         self.constraint_interact::<H, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, Crypto, Bul, NUMCBS>(
+            rng,
+            method,
+            rpks,
+            cur_time,
+            bul_data,
+            is_memb_data_const,
+            pub_args,
+            priv_args,
+            false,
+        )
+    }
+
+    /// Get the execute method circuit for an interaction without scan.
+    ///
+    /// For advanced use only.
+    pub fn circuit_exec_method_create_cb<
+        H: FieldHash<F>,
+        PubArgs: Clone + std::fmt::Debug,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone + std::fmt::Debug,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        CBArgs: Clone + std::fmt::Debug,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs>,
+        Bul: PublicUserBul<F, U>,
+        const NUMCBS: usize,
+    >(
+        &self,
+        rng: &mut (impl CryptoRng + RngCore),
+        method: Interaction<
+            F,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            NUMCBS,
+        >,
+        rpks: [Crypto::SigPK; NUMCBS],
+        cur_time: Time<F>,
+        bul: &Bul,
+        is_memb_data_const: bool,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+    ) -> Result<
+        ExecMethodCircuit<
+            F,
+            H,
+            U,
+            PubArgs,
+            PubArgsVar,
+            PrivArgs,
+            PrivArgsVar,
+            CBArgs,
+            CBArgsVar,
+            Crypto,
+            Bul,
+            NUMCBS,
+        >,
+        SynthesisError,
+    > {
+        assert!(self.scan_index.is_none());
+
+        let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
+
+        self.circuit_interact::<H, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, CBArgs, CBArgsVar, Crypto, Bul, NUMCBS>(
             rng,
             method,
             rpks,
@@ -1682,6 +1892,130 @@ where
         Ok((ps, out))
     }
 
+    /// Get the execute method circuit for a scan interaction.
+    ///
+    /// For advanced use only.
+    pub fn circuit_scan_callbacks<
+        H: FieldHash<F>,
+        CBArgs: Clone + std::fmt::Debug + PartialEq + Eq,
+        CBArgsVar: AllocVar<CBArgs, F> + Clone,
+        Crypto: AECipherSigZK<F, CBArgs, AV = CBArgsVar> + PartialEq + Eq,
+        CBul: PublicCallbackBul<F, CBArgs, Crypto> + Clone,
+        Bul: PublicUserBul<F, U>,
+        const NUMSCANS: usize,
+    >(
+        &self,
+        rng: &mut (impl CryptoRng + RngCore),
+        bul: &Bul,
+        is_memb_data_const: bool,
+        cbul: &CBul,
+        is_memb_nmemb_const: (bool, bool),
+        cur_time: Time<F>,
+        cb_methods: Vec<Callback<F, U, CBArgs, CBArgsVar>>,
+    ) -> Result<
+        (
+            PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+            ExecMethodCircuit<
+                F,
+                H,
+                U,
+                PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+                PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>,
+                PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>,
+                PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>,
+                CBArgs,
+                CBArgsVar,
+                Crypto,
+                Bul,
+                0,
+            >,
+        ),
+        SynthesisError,
+    >
+    where
+        U::UserDataVar: CondSelectGadget<F> + EqGadget<F>,
+    {
+        let start_ind = match self.scan_index {
+            Some(ind) => {
+                assert!(NUMSCANS + ind <= self.callbacks.len());
+                ind
+            }
+            None => {
+                assert!(NUMSCANS <= self.callbacks.len());
+                0
+            }
+        };
+
+        let bul_data = bul.get_membership_data(self.commit::<H>()).unwrap();
+
+        let mut vec_cbs = vec![];
+        let mut vec_memb_pub = vec![];
+        let mut vec_nmemb_pub = vec![];
+        let mut vec_memb_priv = vec![];
+        let mut vec_nmemb_priv = vec![];
+        let mut vec_enc = vec![];
+        let mut vec_times = vec![];
+
+        for i in 0..NUMSCANS {
+            let cb: CallbackCom<F, CBArgs, Crypto> = self.get_cb::<CBArgs, Crypto>(start_ind + i);
+            let data = cbul.get_membership_data(cb.get_ticket());
+            let if_in = cbul.verify_in(cb.get_ticket());
+            let (enc, time) = match if_in {
+                Some((e, t)) => (e, t),
+                None => (Crypto::Ct::default(), Time::default()),
+            };
+            vec_enc.push(enc);
+            vec_times.push(time);
+            vec_cbs.push(cb);
+            vec_memb_pub.push(data.0);
+            vec_memb_priv.push(data.1);
+            vec_nmemb_pub.push(data.2);
+            vec_nmemb_priv.push(data.3);
+        }
+
+        let ps: PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS> = PubScanArgs {
+            memb_pub: vec_memb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_pub: vec_nmemb_pub
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            bulletin: cbul.clone(),
+            is_memb_data_const: is_memb_nmemb_const.0,
+            is_nmemb_data_const: is_memb_nmemb_const.1,
+            cur_time,
+            cb_methods,
+        };
+
+        let prs: PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS> = PrivScanArgs {
+            priv_n_tickets: vec_cbs.try_into().unwrap(),
+            post_times: vec_times.try_into().unwrap(),
+            enc_args: vec_enc
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            memb_priv: vec_memb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+            nmemb_priv: vec_nmemb_priv
+                .try_into()
+                .unwrap_or_else(|_| panic!("Unexpected failure.")),
+        };
+
+        let out = self.circuit_interact::<H, PubScanArgs<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PubScanArgsVar<F, U, CBArgs, CBArgsVar, Crypto, CBul, NUMSCANS>, PrivScanArgs<F, CBArgs, Crypto, CBul, NUMSCANS>, PrivScanArgsVar<F, CBArgs, Crypto, CBul, NUMSCANS>, CBArgs, CBArgsVar, Crypto, Bul, 0>(
+            rng,
+            get_scan_interaction::<F, U, CBArgs, CBArgsVar, Crypto, CBul, H, NUMSCANS>(),
+            [],
+            cur_time,
+            bul_data,
+            is_memb_data_const,
+            ps.clone(),
+            prs,
+            true,
+        )?;
+
+        Ok((ps, out))
+    }
+
     /// Prove a generic statement about the user with respect to a public user commitment.
     ///
     /// This function allows one to prove something about a user object with a public commitment.
@@ -1819,6 +2153,38 @@ where
         ppcirc.clone().generate_constraints(new_cs.clone())?;
 
         Ok(new_cs)
+    }
+
+    /// Get the prove predicate circuit for a statement.
+    ///
+    /// For advanced use only.
+    pub fn circuit_prove_statement<
+        H: FieldHash<F>,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        Snark: SNARK<F, Error = SynthesisError>,
+    >(
+        &self,
+        predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+    ) -> Result<
+        ProvePredicateCircuit<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar>,
+        SynthesisError,
+    > {
+        let ppcirc: ProvePredicateCircuit<F, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar> =
+            ProvePredicateCircuit {
+                priv_user: self.clone(),
+                pub_com: self.commit::<H>(),
+                priv_args,
+
+                pub_args,
+                associated_method: predicate,
+            };
+
+        Ok(ppcirc)
     }
 
     /// Prove a statement about the user object, along with membership in some bulletin.
@@ -1973,6 +2339,43 @@ where
         ppcirc.clone().generate_constraints(new_cs.clone())?;
 
         Ok(new_cs)
+    }
+
+    /// Get the execute method circuit for proving a statement and membership.
+    ///
+    /// For advanced use only.
+    pub fn circuit_prove_statement_and_in<
+        H: FieldHash<F>,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F> + Clone,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F> + Clone,
+        Bul: PublicUserBul<F, U>,
+    >(
+        &self,
+        predicate: SingularPredicate<F, UserVar<F, U>, ComVar<F>, PubArgsVar, PrivArgsVar>,
+        memb_data: (Bul::MembershipWitness, Bul::MembershipPub),
+        is_memb_data_const: bool,
+        pub_args: PubArgs,
+        priv_args: PrivArgs,
+    ) -> Result<
+        ProvePredInCircuit<F, H, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, Bul>,
+        SynthesisError,
+    > {
+        let ppcirc: ProvePredInCircuit<F, H, U, PubArgs, PubArgsVar, PrivArgs, PrivArgsVar, Bul> =
+            ProvePredInCircuit {
+                priv_user: self.clone(),
+                priv_extra_membership_data: memb_data.0,
+                priv_args,
+                pub_extra_membership_data: memb_data.1,
+                bul_memb_is_const: is_memb_data_const,
+                pub_args,
+                associated_method: predicate,
+
+                _phantom_hash: core::marker::PhantomData,
+            };
+
+        Ok(ppcirc)
     }
 }
 
