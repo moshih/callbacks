@@ -584,6 +584,44 @@ impl<
         F: PrimeField + Absorb,
         H: FieldHash<F>,
         U: UserData<F>,
+        PubArgs: Clone,
+        PubArgsVar: AllocVar<PubArgs, F>,
+        PrivArgs: Clone,
+        PrivArgsVar: AllocVar<PrivArgs, F>,
+        CBArgs: Clone,
+        CBArgsVar: AllocVar<CBArgs, F>,
+        Crypto: AECipherSigZK<F, CBArgs>,
+        Bul: PublicUserBul<F, U>,
+        const NUMCBS: usize,
+    > std::fmt::Debug
+    for ExecMethodCircuit<
+        F,
+        H,
+        U,
+        PubArgs,
+        PubArgsVar,
+        PrivArgs,
+        PrivArgsVar,
+        CBArgs,
+        CBArgsVar,
+        Crypto,
+        Bul,
+        NUMCBS,
+    >
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ExecMethodCircuit: OldUserData: {:?}, NewUserData: {:?}",
+            self.priv_old_user, self.priv_new_user
+        )
+    }
+}
+
+impl<
+        F: PrimeField + Absorb,
+        H: FieldHash<F>,
+        U: UserData<F>,
         PubArgs: Clone + std::fmt::Debug,
         PubArgsVar: AllocVar<PubArgs, F>,
         PrivArgs: Clone + std::fmt::Debug,
