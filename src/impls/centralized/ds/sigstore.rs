@@ -973,7 +973,7 @@ pub type UOVStore<F, A> = CentralStore<F, BleedingUOV<F>, SigRangeStore<F, Bleed
 pub type JJSchnorrObjStore = SigObjStore<BlsFr, JubjubSchnorr>;
 
 /// A user object store which uses  BLS377 Schnorr signatures.
-pub type BLSSchnorrObjStore = SigObjStore<Bls377Fr, Bls377Schnorr>;
+pub type BLS377SchnorrObjStore = SigObjStore<Bls377Fr, Bls377Schnorr>;
 
 /// A callback storage system which uses Jubjub BLS Schnorr signatures.
 pub type JJSchnorrCallbackStore<A> =
@@ -982,6 +982,10 @@ pub type JJSchnorrCallbackStore<A> =
 /// A central storage system which uses Jubjub BLS Schnorr signatures.
 pub type JJSchnorrStore<A> =
     CentralStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>, A>;
+
+/// A central storage system which uses BLS377 Schnorr signatures.
+pub type BLS377SchnorrStore<A> =
+    CentralStore<Bls377Fr, Bls377Schnorr, SigRangeStore<Bls377Fr, Bls377Schnorr>, A>;
 
 /// A user object store which uses Grumpkin BN254 Schnorr signatures.
 pub type GRSchnorrObjStore = SigObjStore<BnFr, GrumpkinSchnorr>;
