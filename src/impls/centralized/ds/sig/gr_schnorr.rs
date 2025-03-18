@@ -244,7 +244,6 @@ impl Privkey<Fq> for GRSchnorrPrivkey {
 
 impl ToConstraintField<Fq> for GRSchnorrPubkey {
     fn to_field_elements(&self) -> Option<Vec<Fq>> {
-        println!("call1");
         let mut vector: Vec<Fq> = Vec::new();
 
         vector.extend_from_slice(&self.0.into_affine().x.to_field_elements().unwrap());
@@ -257,7 +256,6 @@ impl ToConstraintField<Fq> for GRSchnorrPubkey {
 
 impl ToConstraintFieldGadget<Fq> for GRSchnorrPubkeyVar {
     fn to_constraint_field(&self) -> Result<Vec<FpVar<Fq>>, SynthesisError> {
-        println!("call2");
         let mut vector: Vec<FpVar<Fq>> = Vec::new();
 
         vector.extend_from_slice(&self.0.to_affine()?.x.to_constraint_field()?);
@@ -289,7 +287,6 @@ impl AllocVar<GRSchnorrPubkey, Fq> for GRSchnorrPubkeyVar {
         let ns = cs.into();
         let cs = ns.cs();
         let res = f();
-        println!("call3");
 
         res.and_then(|pk| {
             let pk = pk.borrow();
