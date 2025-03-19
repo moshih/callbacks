@@ -291,7 +291,6 @@ impl AllocVar<GRSchnorrPubkey, Fq> for GRSchnorrPubkeyVar {
         res.and_then(|pk| {
             let pk = pk.borrow();
             let jj_v = GVar::new_variable(ns!(cs, "entry"), || Ok(pk.0), mode)?;
-            println!("GRS Allocated, {:?}", mode);
 
             Ok(Self(jj_v))
         })
@@ -306,6 +305,8 @@ impl GRSchnorrPubkeyVar {
     //         GVar::new_input(cs, || Ok(aff_pk)).map(SchnorrPubkeyVar) in ZK is cumbersome and unnecessary.
     fn verify(&self, msg: &FV, sig: &GRSchnorrSignatureVar) -> Result<Boolean<Fq>, SynthesisError> {
         let cs = self.0.cs().or(msg.cs()).or(sig.e.cs()).or(sig.s.cs());
+
+        println!("value: {:?}", self.value());
 
         // Witness the group generator. This is the same across all signatures
         let g = G::generator();
