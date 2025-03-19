@@ -42,7 +42,7 @@ pub struct GRSchnorrPrivkey(F);
 
 /// A public Grumpkin BN254 Schnorr verification key.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, CanonicalSerialize, CanonicalDeserialize)]
-pub struct GRSchnorrPubkey(G);
+pub struct GRSchnorrPubkey(pub G);
 
 impl Default for GRSchnorrPubkey {
     fn default() -> Self {
