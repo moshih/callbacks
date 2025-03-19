@@ -42,7 +42,7 @@ pub struct GRSchnorrPrivkey(F);
 
 /// A public Grumpkin BN254 Schnorr verification key.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, CanonicalSerialize, CanonicalDeserialize)]
-pub struct GRSchnorrPubkey(pub G);
+pub struct GRSchnorrPubkey(G);
 
 impl Default for GRSchnorrPubkey {
     fn default() -> Self {
@@ -305,8 +305,6 @@ impl GRSchnorrPubkeyVar {
     //         GVar::new_input(cs, || Ok(aff_pk)).map(SchnorrPubkeyVar) in ZK is cumbersome and unnecessary.
     fn verify(&self, msg: &FV, sig: &GRSchnorrSignatureVar) -> Result<Boolean<Fq>, SynthesisError> {
         let cs = self.0.cs().or(msg.cs()).or(sig.e.cs()).or(sig.s.cs());
-
-        println!("value: {:?}", self.value());
 
         // Witness the group generator. This is the same across all signatures
         let g = G::generator();
