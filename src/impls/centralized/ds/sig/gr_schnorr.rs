@@ -291,7 +291,7 @@ impl AllocVar<GRSchnorrPubkey, Fq> for GRSchnorrPubkeyVar {
         res.and_then(|pk| {
             let pk = pk.borrow();
             let jj_v = GVar::new_variable(ns!(cs, "entry"), || Ok(pk.0), mode)?;
-            println!("Allocated, {:?}", mode);
+            println!("GRS Allocated, {:?}", mode);
 
             Ok(Self(jj_v))
         })
