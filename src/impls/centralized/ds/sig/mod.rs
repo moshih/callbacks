@@ -120,5 +120,8 @@ pub mod uov;
 /// Schnorr Signatures over Jubjub and BLS for in-circuit verification.
 pub mod jj_schnorr;
 
+/// Schnorr Signatures over bls12_377 and its Twisted Edwards curve atop the scalar field for in-circuit verification.
+pub mod bls377_schnorr;
+
 /// Schnorr signatures over Grumpkin and bn254 for in-circuit verification.
 pub mod gr_schnorr;

@@ -12,8 +12,8 @@ use crate::{
             crypto::{FakeSigPubkey, FakeSigPubkeyVar, NoEnc, NoSigOTP},
             ds::{
                 sig::{
-                    gr_schnorr::GrumpkinSchnorr, jj_schnorr::JubjubSchnorr, uov::BleedingUOV,
-                    Signature,
+                    bls377_schnorr::Bls377Schnorr, gr_schnorr::GrumpkinSchnorr,
+                    jj_schnorr::JubjubSchnorr, uov::BleedingUOV, Signature,
                 },
                 sigrange::SigRangeStore,
             },
@@ -21,6 +21,7 @@ use crate::{
         hash::Poseidon,
     },
 };
+use ark_bls12_377::Fr as Bls377Fr;
 use ark_bls12_381::Fr as BlsFr;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::{PrimeField, ToConstraintField};
@@ -971,6 +972,9 @@ pub type UOVStore<F, A> = CentralStore<F, BleedingUOV<F>, SigRangeStore<F, Bleed
 /// A user object store which uses Jubjub BLS Schnorr signatures.
 pub type JJSchnorrObjStore = SigObjStore<BlsFr, JubjubSchnorr>;
 
+/// A user object store which uses  BLS377 Schnorr signatures.
+pub type BLS377SchnorrObjStore = SigObjStore<Bls377Fr, Bls377Schnorr>;
+
 /// A callback storage system which uses Jubjub BLS Schnorr signatures.
 pub type JJSchnorrCallbackStore<A> =
     CallbackStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>, A>;
@@ -978,6 +982,10 @@ pub type JJSchnorrCallbackStore<A> =
 /// A central storage system which uses Jubjub BLS Schnorr signatures.
 pub type JJSchnorrStore<A> =
     CentralStore<BlsFr, JubjubSchnorr, SigRangeStore<BlsFr, JubjubSchnorr>, A>;
+
+/// A central storage system which uses BLS377 Schnorr signatures.
+pub type BLS377SchnorrStore<A> =
+    CentralStore<Bls377Fr, Bls377Schnorr, SigRangeStore<Bls377Fr, Bls377Schnorr>, A>;
 
 /// A user object store which uses Grumpkin BN254 Schnorr signatures.
 pub type GRSchnorrObjStore = SigObjStore<BnFr, GrumpkinSchnorr>;
