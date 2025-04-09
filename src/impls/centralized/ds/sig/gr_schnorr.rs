@@ -345,10 +345,14 @@ impl GRSchnorrPubkeyVar {
         // (since e is naturally a base field element and too big to be a scalar field element).
         let e_prime_bytes = e_prime.to_bytes_le()?;
         // let base_mod_bitlen = F::MODULUS_BIT_SIZE as usize;
-        let is_equal = e_prime_bytes[0].is_eq(&e[0])?;
+        let mut eq = Boolean::TRUE;
+
+        for i in 0..e_prime_bytes.len() {
+            eq &= e_prime_bytes[i].is_eq(&e[i])?;
+        }
 
         // Return whether this verified
-        Ok(is_equal)
+        Ok(eq)
     }
 }
 

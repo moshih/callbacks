@@ -189,6 +189,7 @@ impl<F: PrimeField, H: FieldHash<F>, const N: usize, const M: usize>
             let rec = rec.borrow();
             let data =
                 Vec::<FpVar<F>>::new_variable(ns!(cs, "data"), || Ok(rec.data.clone()), mode)?;
+
             Ok(UOVPubkeyVar {
                 data,
                 n: PhantomData,

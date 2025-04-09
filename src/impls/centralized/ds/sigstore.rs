@@ -626,7 +626,7 @@ where
             None => (
                 self.get_pubkey(),
                 self.get_memb_witness(&tik).unwrap(),
-                B::NonMembershipPub::default(),
+                self.nmemb_bul.get_nmemb_pub(),
                 B::NonMembershipWitness::default(),
             ),
         }

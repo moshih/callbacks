@@ -475,6 +475,7 @@ fn main() {
             cb_methods.clone(),
         )
         .unwrap();
+
     println!(
         "\t (time) Scanning (interaction proving) time: {:?}",
         start.elapsed().unwrap()
