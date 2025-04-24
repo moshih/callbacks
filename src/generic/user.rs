@@ -297,11 +297,11 @@ pub struct User<F: PrimeField + Absorb, U: UserData<F>> {
 
     /// A list of callbacks, serialized and stored. This may also be ignored (the [`User::get_cb`]
     /// function should be used instead.
-    pub(crate) callbacks: Vec<Vec<u8>>,
+    pub callbacks: Vec<Vec<u8>>,
 
-    pub(crate) scan_index: Option<usize>,
+    pub scan_index: Option<usize>,
 
-    pub(crate) in_progress_cbs: Vec<Vec<u8>>,
+    pub in_progress_cbs: Vec<Vec<u8>>,
 }
 
 impl<F: PrimeField + Absorb, U: UserData<F>> std::fmt::Octal for User<F, U> {
