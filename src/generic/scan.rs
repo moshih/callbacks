@@ -688,7 +688,7 @@ pub fn scan_method<
     out_user
 }
 
-pub(crate) fn scan_apply_method_zk<
+pub fn scan_apply_method_zk<
     F: PrimeField + Absorb,
     U: UserData<F>,
     CBArgs: Clone,
