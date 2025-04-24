@@ -333,7 +333,7 @@ where
         .unwrap()
 }
 
-pub(crate) fn add_ticket_to_hc<
+pub fn add_ticket_to_hc<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
     Args: Clone,
