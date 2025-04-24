@@ -87,7 +87,7 @@ impl<Args: Clone, Crypto: AECipherSigZK<F, Args>, F: PrimeField + Absorb>
 impl<Args: Clone, Crypto: AECipherSigZK<F, Args>, F: PrimeField + Absorb>
     CallbackTicketVar<F, Args, Crypto>
 {
-    pub(crate) fn serialize(&self) -> Result<Vec<SerVar<F>>, SynthesisError> {
+    pub fn serialize(&self) -> Result<Vec<SerVar<F>>, SynthesisError> {
         Ok([
             self.tik.to_constraint_field()?,
             self.cb_method_id.to_constraint_field()?,
@@ -224,7 +224,7 @@ type CBList<F, Crypto, Args, const NUMCBS: usize> = [(
     <Crypto as AECipherSigZK<F, Args>>::Rand,
 ); NUMCBS];
 
-pub(crate) fn create_defaults<
+pub fn create_defaults<
     F: PrimeField + Absorb,
     U: UserData<F>,
     PubArgs: Clone,
@@ -275,7 +275,7 @@ pub(crate) fn create_defaults<
         .unwrap_or_else(|_| panic!("Failed to create defaults."))
 }
 
-pub(crate) fn create_cbs_from_interaction<
+pub fn create_cbs_from_interaction<
     F: PrimeField + Absorb,
     U: UserData<F>,
     PubArgs: Clone + std::fmt::Debug,
@@ -346,7 +346,7 @@ pub fn add_ticket_to_hc<
     H::hash(&[&[hash_chain], serialized_ticket.as_slice()].concat())
 }
 
-pub(crate) fn add_ticket_to_hc_zk<
+pub fn add_ticket_to_hc_zk<
     F: PrimeField + Absorb,
     H: FieldHash<F>,
     Args: Clone,
