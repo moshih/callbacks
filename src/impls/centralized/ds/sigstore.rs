@@ -987,6 +987,10 @@ pub type JJSchnorrStore<A> =
 pub type BLS377SchnorrStore<A> =
     CentralStore<Bls377Fr, Bls377Schnorr, SigRangeStore<Bls377Fr, Bls377Schnorr>, A>;
 
+/// A callback storage system which uses Grumpkin BN254 Schnorr signatures.
+pub type BLS377chnorrCallbackStore<A> =
+CallbackStore<Bls377Fr, Bls377Schnorr, SigRangeStore<Bls377Fr, Bls377Schnorr>, A>;
+
 /// A user object store which uses Grumpkin BN254 Schnorr signatures.
 pub type GRSchnorrObjStore = SigObjStore<BnFr, GrumpkinSchnorr>;
 
