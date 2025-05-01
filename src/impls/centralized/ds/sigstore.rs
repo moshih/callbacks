@@ -345,7 +345,7 @@ where
     Standard: Distribution<F>,
     Args: Clone + ToConstraintField<F>,
 {
-    privkey: S::Privkey,
+    pub privkey: S::Privkey,
     /// The public key for verifying membership of tickets.
     pub pubkey: S::Pubkey,
     /// The called tickets.
